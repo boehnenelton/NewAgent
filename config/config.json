@@ -1,0 +1,209 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "ScriptConfig"
+  ],
+  "Fields": [
+    {
+      "name": "setting_name",
+      "type": "string"
+    },
+    {
+      "name": "setting_value",
+      "type": "any"
+    },
+    {
+      "name": "description",
+      "type": "string"
+    }
+  ],
+  "Values": [
+    [
+      "engine_mode",
+      "rest",
+      "Active engine: 'rest' or 'interactions'"
+    ],
+    [
+      "model_rest",
+      "gemini-2.5-flash",
+      "Model for REST generateContent engine"
+    ],
+    [
+      "model_interactions",
+      "gemini-2.5-flash",
+      "Model for Interactions API engine"
+    ],
+    [
+      "key_registry_path",
+      "config/keys.bejson",
+      "API key registry path"
+    ],
+    [
+      "model_registry_path",
+      "config/models.bejson",
+      "Model registry path"
+    ],
+    [
+      "key_state_path",
+      "config/key_state.bejson",
+      "Key cooldown state path"
+    ],
+    [
+      "env_file_path",
+      "/storage/emulated/0/env_file.json",
+      "GlobalEnv BEJSON file synced for API keys on startup"
+    ],
+    [
+      "log_level",
+      "INFO",
+      "Python logging level"
+    ],
+    [
+      "send_delay_seconds",
+      2.0,
+      "Delay before each API request (seconds)"
+    ],
+    [
+      "max_history_turns",
+      20,
+      "Max conversation turns kept in memory"
+    ],
+    [
+      "history_panel_rows",
+      6,
+      "Rows shown in TUI history panel"
+    ],
+    [
+      "max_actions_per_turn",
+      10,
+      "Max action tags executed per model response"
+    ],
+    [
+      "auto_continue_enabled",
+      true,
+      "Auto-feed action results back to model"
+    ],
+    [
+      "max_autonomy_turns",
+      20,
+      "Max consecutive autonomous turns (0=unlimited)"
+    ],
+    [
+      "exec_timeout_seconds",
+      60,
+      "Max seconds per shell command"
+    ],
+    [
+      "exec_denylist",
+      [
+        "rm -rf /",
+        "dd if=",
+        "mkfs",
+        ":(){:|:&};:"
+      ],
+      "Command prefixes blocked before execution"
+    ],
+    [
+      "dryrun_mode",
+      false,
+      "When true: actions shown but not executed"
+    ],
+    [
+      "confirmation_gate",
+      false,
+      "Pause for Y/n before exec/delete actions"
+    ],
+    [
+      "input_mode",
+      0,
+      "0=typed 1=STT 2=dialog+snippets"
+    ],
+    [
+      "multi_line_mode",
+      false,
+      "Triple-Enter for multi-line typed input"
+    ],
+    [
+      "live_feed_output",
+      false,
+      "Stream exec stdout/stderr live"
+    ],
+    [
+      "speak_output_enabled",
+      true,
+      "Print <speak> text to terminal"
+    ],
+    [
+      "interactions_max_rounds",
+      10,
+      "Max function-call rounds per Interactions turn"
+    ],
+    [
+      "native_tools_scope",
+      "all",
+      "Interactions tool scope: 'all' or 'shell_only'"
+    ],
+    [
+      "resume_mode",
+      "full_history",
+      "Resume strategy: 'full_history' or 'fresh_replay'"
+    ],
+    [
+      "gen_temperature",
+      0.7,
+      "Baseline generationConfig.temperature (legacy-profile models only)"
+    ],
+    [
+      "gen_top_p",
+      0.95,
+      "Baseline generationConfig.topP (legacy-profile models only)"
+    ],
+    [
+      "gen_top_k",
+      40,
+      "Baseline generationConfig.topK (legacy-profile models only)"
+    ],
+    [
+      "gen_candidate_count",
+      1,
+      "Baseline generationConfig.candidateCount (legacy-profile models only)"
+    ],
+    [
+      "gen_thinking_budget",
+      -1,
+      "Baseline thinkingConfig.thinkingBudget (legacy-profile models; -1 = dynamic)"
+    ],
+    [
+      "gen_thinking_level",
+      "high",
+      "Baseline thinkingConfig.thinkingLevel (v3-profile models: 'low'/'high')"
+    ],
+    [
+      "debug_mode",
+      true,
+      "When true: write raw REST API request/response pairs to logs/raw_api_debug_*.json and logs/raw_api_error_*.json (rotated, last 5 kept). Defaults True: this being off is why the HTTP 400 issue went undiagnosed through two prior fix attempts."
+    ],
+    [
+      "health_check_on_startup",
+      true,
+      "When true: fire one minimal REST API call at startup so a bad key/model surfaces immediately instead of mid-conversation"
+    ],
+    [
+      "network_error_auto_retry",
+      true,
+      "When true: a NETWORK ERROR (dropped connection, no route) auto-resends the same turn instead of waiting for the user to manually retype it"
+    ],
+    [
+      "network_error_retry_backoff_seconds",
+      3.0,
+      "Delay before an auto-resend triggered by network_error_auto_retry"
+    ],
+    [
+      "auto_amnesia_memory_retrieval",
+      true,
+      "When true, /amnesia (agent.py) or the webagent Amnesia button immediately re-feeds the compressed recap back into history ('rebirth') as soon as it wipes memory. When false, /amnesia wipes to a true blank slate and the recap waits on disk until /rebirth is run manually."
+    ]
+  ]
+}

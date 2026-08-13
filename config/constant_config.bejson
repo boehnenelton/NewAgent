@@ -1,0 +1,100 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "Constant"
+  ],
+  "Fields": [
+    {
+      "name": "constant_name",
+      "type": "string"
+    },
+    {
+      "name": "defined_value",
+      "type": "any"
+    },
+    {
+      "name": "default_value",
+      "type": "any"
+    },
+    {
+      "name": "description",
+      "type": "string"
+    }
+  ],
+  "Values": [
+    [
+      "max_context_tokens",
+      null,
+      8000,
+      "Total token budget for the assembled bubble"
+    ],
+    [
+      "pct_persistent_policy",
+      null,
+      0.2,
+      "Share of budget for core directives"
+    ],
+    [
+      "pct_active_tasks",
+      null,
+      0.2,
+      "Share of budget reserved for active-task context (not yet wired to a source \u2014 see docs)"
+    ],
+    [
+      "pct_keyword_triggers",
+      null,
+      0.35,
+      "Share of budget for keyword-triggered files"
+    ],
+    [
+      "pct_knowledge_pool",
+      null,
+      0.15,
+      "Share of budget for knowledge-pool drips"
+    ],
+    [
+      "pct_cwd_context",
+      null,
+      0.1,
+      "Share of budget for cwd/context.bejson \u2014 auto-injected, no opt-in"
+    ],
+    [
+      "chars_per_token",
+      null,
+      4,
+      "Chars-per-token estimate used for all budget math (no real tokenizer call)"
+    ],
+    [
+      "global_default_cooldown",
+      null,
+      300,
+      "Default seconds between keyword trips"
+    ],
+    [
+      "knowledge_drip_interval",
+      null,
+      5,
+      "Turns between knowledge-pool injections"
+    ],
+    [
+      "observer_refinement_interval",
+      null,
+      7,
+      "Turns between Observer compression checks"
+    ],
+    [
+      "observer_enabled",
+      null,
+      false,
+      "Part 4 switch \u2014 Observer compression on/off"
+    ],
+    [
+      "pct_env_file",
+      null,
+      0.05,
+      "Share of budget for the live env_file.json drip (see build_env_file_section)"
+    ]
+  ]
+}

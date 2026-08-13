@@ -1,0 +1,24 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "SelectionState"
+  ],
+  "Fields": [
+    {
+      "name": "selected_plan_name",
+      "type": "string"
+    },
+    {
+      "name": "auto_run_tasks",
+      "type": "boolean"
+    }
+  ],
+  "Values": [
+    [
+      "Core_BEJSON_Guide",
+      true
+    ]
+  ]
+}

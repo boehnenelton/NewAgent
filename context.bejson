@@ -1,0 +1,19 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "CwdContext"
+  ],
+  "Fields": [
+    {
+      "name": "section",
+      "type": "string"
+    },
+    {
+      "name": "content",
+      "type": "string"
+    }
+  ],
+  "Values": []
+}

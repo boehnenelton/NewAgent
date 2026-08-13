@@ -1,0 +1,27 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "Snippet"
+  ],
+  "Fields": [
+    {
+      "name": "snippet_id",
+      "type": "string"
+    },
+    {
+      "name": "label",
+      "type": "string"
+    },
+    {
+      "name": "text",
+      "type": "string"
+    },
+    {
+      "name": "is_active",
+      "type": "boolean"
+    }
+  ],
+  "Values": []
+}

@@ -1,0 +1,139 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "Trigger"
+  ],
+  "Fields": [
+    {
+      "name": "keyword",
+      "type": "string"
+    },
+    {
+      "name": "context_path",
+      "type": "string"
+    },
+    {
+      "name": "cooldown_seconds",
+      "type": "integer"
+    }
+  ],
+  "Values": [
+    [
+      "report",
+      "report_tool.md",
+      900
+    ],
+    [
+      "write a report",
+      "report_tool.md",
+      900
+    ],
+    [
+      "task",
+      "checklist_tool.md",
+      900
+    ],
+    [
+      "plan",
+      "checklist_tool.md",
+      900
+    ],
+    [
+      "project",
+      "project_tracker.md",
+      900
+    ],
+    [
+      "html",
+      "kb://behtml_1",
+      600
+    ],
+    [
+      "html",
+      "kb://behtml_2",
+      600
+    ],
+    [
+      "html",
+      "kb://behtml_3",
+      600
+    ],
+    [
+      "html",
+      "kb://behtml_4",
+      600
+    ],
+    [
+      "html",
+      "kb://behtml_5",
+      600
+    ],
+    [
+      "html",
+      "kb://behtml_6",
+      600
+    ],
+    [
+      "html",
+      "kb://behtml_7",
+      600
+    ],
+    [
+      "html",
+      "kb://behtml_8",
+      600
+    ],
+    [
+      "html",
+      "kb://behtml_9",
+      600
+    ],
+    [
+      "html",
+      "kb://behtml_10",
+      600
+    ],
+    [
+      "html",
+      "kb://behtml_11",
+      600
+    ],
+    [
+      "html",
+      "kb://behtml_12",
+      600
+    ],
+    [
+      "book writer",
+      "kb://bookwriter_1",
+      900
+    ],
+    [
+      "book writer",
+      "kb://bookwriter_2",
+      900
+    ],
+    [
+      "book writer",
+      "kb://bookwriter_3",
+      900
+    ],
+    [
+      "book writer",
+      "kb://bookwriter_4",
+      900
+    ],
+    [
+      "book writer",
+      "kb://bookwriter_5",
+      900
+    ],
+    [
+      "book writer",
+      "kb://bookwriter_6",
+      900
+    ]
+  ]
+}

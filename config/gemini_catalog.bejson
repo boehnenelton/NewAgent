@@ -1,0 +1,134 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "GeminiModelCatalog"
+  ],
+  "Fields": [
+    {
+      "name": "model_number",
+      "type": "number"
+    },
+    {
+      "name": "model_string",
+      "type": "string"
+    },
+    {
+      "name": "display_name",
+      "type": "string"
+    },
+    {
+      "name": "tier",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    },
+    {
+      "name": "notes",
+      "type": "string"
+    },
+    {
+      "name": "api_profile",
+      "type": "string"
+    },
+    {
+      "name": "provider",
+      "type": "string"
+    }
+  ],
+  "Values": [
+    [
+      1,
+      "gemini-2.5-flash",
+      "Gemini 2.5 Flash",
+      "flash",
+      "GA",
+      "Prior default; balanced multimodal workhorse.",
+      "legacy",
+      "gemini"
+    ],
+    [
+      2,
+      "gemini-2.5-flash-lite",
+      "Gemini 2.5 Flash-Lite",
+      "flash-lite",
+      "GA",
+      "Cheapest tier, $0.10/$0.40 per 1M tokens.",
+      "legacy",
+      "gemini"
+    ],
+    [
+      3,
+      "gemini-2.5-pro",
+      "Gemini 2.5 Pro",
+      "pro",
+      "GA",
+      "Prior-gen flagship, deep reasoning and coding.",
+      "legacy",
+      "gemini"
+    ],
+    [
+      4,
+      "gemini-3.1-pro",
+      "Gemini 3.1 Pro",
+      "pro",
+      "GA",
+      "Feb 2026 flagship; strongest pure reasoning (GPQA, SWE-bench).",
+      "legacy",
+      "gemini"
+    ],
+    [
+      5,
+      "gemini-3.1-flash-lite",
+      "Gemini 3.1 Flash-Lite",
+      "flash-lite",
+      "GA",
+      "Replacement for the shut-down 2.0 Flash-Lite.",
+      "legacy",
+      "gemini"
+    ],
+    [
+      6,
+      "gemini-3.5-flash",
+      "Gemini 3.5 Flash",
+      "flash",
+      "GA",
+      "May 2026 GA; near-Pro agentic performance.",
+      "legacy",
+      "gemini"
+    ],
+    [
+      7,
+      "gemini-3.5-flash-lite",
+      "Gemini 3.5 Flash-Lite",
+      "flash-lite",
+      "GA",
+      "Added 2026-07-22 (released 2026-07-21). Fastest/cheapest 3.x tier, 350 tok/s, $0.30/$2.50 per 1M. Gemini 3.x request rules apply: thinking_level replaces thinking_budget; no temperature/top_p/top_k/candidate_count.",
+      "v3",
+      "gemini"
+    ],
+    [
+      8,
+      "gemini-3.6-flash",
+      "Gemini 3.6 Flash",
+      "flash",
+      "GA",
+      "Added 2026-07-22 (released 2026-07-21). Successor to 3.5 Flash, 17% fewer output tokens, $1.50/$7.50 per 1M. Same Gemini 3.x request rules as row 7.",
+      "v3",
+      "gemini"
+    ],
+    [
+      9,
+      "qwen3.6-35b",
+      "Qwen 3.6 35B (Provocative)",
+      "flash",
+      "beta",
+      "OpenAI-compatible beta host, 262k context, thinking off by default. 1,000,000 free tokens for first 100 users, key valid through 2026-08-27.",
+      "legacy",
+      "provocative"
+    ]
+  ]
+}

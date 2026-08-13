@@ -1,0 +1,53 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Project_Name": "NewAgent",
+  "Project_Modified_Date": "2026-08-13T23:30:33Z",
+  "Project_Description": "Ground-up entirely new async agent terminal client with dual REST and Interactions engines.",
+  "Schema_Version": "1.0.2",
+  "Records_Type": [
+    "RootPackage"
+  ],
+  "Fields": [
+    {
+      "name": "change_log",
+      "type": "string"
+    },
+    {
+      "name": "date_changed",
+      "type": "string"
+    },
+    {
+      "name": "change_notes",
+      "type": "string"
+    }
+  ],
+  "Values": [
+    [
+      "v3.20.1 pkg070",
+      "2026-08-13T00:00:00Z",
+      "Response to pkg69 audit report: added ValidationResult.is_valid as a read-only property alias for .valid in lib_bejson_Core_bejson_validator.py (2.0.2 -> 2.0.3) -- the audit's own suggested fix for the reported '.is_valid has no attribute' crash. Could not reproduce the crash itself: grepped this whole package for '.is_valid' callers and found none, and no PROFILER file exists in this zip, so the offending caller lives in code not included here. Added the alias defensively anyway since it's zero-risk and directly addresses the failure mode either way. Also used this pass to correct several other audit items against actual package state rather than re-reporting them uncritically: the literal '~' directory is NOT present in this package (item resolved or never present here); the changelog is NOT 8 packages behind -- pkg059 through pkg069 are all present in .bejson_project.json going into this entry; raw_api_debug_*.json dumps were checked directly and contain no API keys or request URLs (only response bodies / request payload minus headers), so the redaction concern doesn't reproduce in this package's actual dump content. Confirmed still real: no .git in project root; checklist auto-delete only fires on cwd change (lib_bejson_newagent_actions.py line ~1362); network_error_auto_retry's retry-safety claim holds for REST/tag mode specifically (the try/except only wraps the response call, before any <exec> actions run) but is a genuine open risk for the Interactions/native-tool-calling engine, where tool calls can execute mid-turn before a later network failure in the same run_turn() call -- a retry there resends as a fresh turn with no memory of what already ran. The archive reconciliation, empty PKG dirs, job/checklist desync, and video dedupe items are all about external SD-card state (/storage/9C33-6BBD, /storage/emulated/0/Admin) that isn't included in this zip at all -- flagged as out of scope for a package-based review, not fixed or dismissed."
+    ],
+    [
+      "v3.20.1 pkg071",
+      "2026-08-13T00:00:00Z",
+      "v3.20.1 pkg071 | Context Bubble Part 2 (keyword triggers) update, per Elton's request. (1) Added a 'book writer' keyword to config/triggers.bejson (6 rows, cooldown 900s) pointing at 6 new kb://bookwriter_1..6 entries in config/knowledge_pool.bejson covering tools/bookwriter/Cli_Bookwriter.py invocation, full workflow order, core flags, context-attachment flags, auto-run on/off semantics, and crash-resumability/key resolution -- no other tools folders were touched, per explicit instruction to hold off until Elton verifies them. (2) Replaced the becss_1..7 knowledge_pool entries and their 'becss' trigger rows with 12 new kb://behtml_1..12 entries (Ry=32px quantization law, the 28px-paradox derivation, the X0-X7 12.5% octal columns, horizontally-strong containers, the Grid/Component BEM namespace split, modifier-only state mutation, the white/black/#DE2626 tri-color palette + contrast laws, ethereal-vs-tangible visual states, the data-behtml-x/y raycasting engine, and the anti-drift auditor) wired to a single 'html' keyword (12 rows, cooldown 600s) so any message containing 'html' (case-insensitive substring match, per scan_triggers) drips the full BEHTML knowledge set instead of the old BECSS set. Both files re-validated clean via validate_bejson."
+    ],
+    [
+      "v3.20.2 pkg072",
+      "2026-08-13T00:00:00Z",
+      "v3.20.2 pkg072 | Corrected tools/Cli_Web_Extractor per Elton's report that it had deviated. It had drifted into a 'Unified CLI for Web Extraction and Book CMS Generation' -- a --book subcommand had been merged in (book_generator.py, combine_bejson_context.py, output_books/), and web_extractor_cli.py had 12 live Gemini API keys hardcoded directly in source as a DEFAULT_KEY_POOL fallback. Folder also had a stray full copy of Flask_Web_Extractor-422.py, a Persist/ dir, and a bejson_admin_libraries_context.txt left over from a study pass. All of that is removed. Rebuilt as a single tool, two files: web_extractor_core.py (fetch_html/_is_challenge/extract_text_standard/extract_text_ai/HTML_VIEW_TEMPLATE, diffed line-by-line against Flask_Web_Extractor-422.py -- logic is identical, only whitespace formatting differs) and Cli_Web_Extractor.py (argparse entrypoint). No encryption, no Library system, no bejson sidecar file -- per explicit instruction the tool does exactly one thing: fetch a URL, extract with the same standard/AI methods, render onto the same template, write one HTML file. API key resolution for --ai checks --api-key then GEMINI_API_KEY/GOOGLE_API_KEY/GEMINI_KEY_1 env vars -- no hardcoded secrets. Verified extract_text_standard + render_html end-to-end against sample HTML (network fetch untestable in this sandbox, network egress is restricted to package registries here)."
+    ],
+    [
+      "v3.20.2 pkg073",
+      "2026-08-13T23:30:19Z",
+      "v3.20.2 pkg073 | Repo prep: cleared all runtime artifacts (logs/*, backups/*, docs/*) -- session transcripts, raw_api_debug dumps, backup_log.bejson, and stale dated docs (CHECKLIST, HISTORY, IDEAS, PLAN) all removed to keep repo clean. Wrote README.md with feature overview, structure, quick-start, engine table, and author credits. Initialized git repo and pushed first commit to boehnenelton/NewAgent (master)."
+    ],
+    [
+      "v3.20.2 pkg073",
+      "2026-08-13T23:30:33Z",
+      "v3.20.2 pkg073 | Repo prep: cleared all runtime artifacts (logs/*, backups/*, docs/*) -- session transcripts, raw_api_debug dumps, backup_log.bejson, and stale dated docs removed. Wrote README.md. Initialized git repo and pushed first commit to boehnenelton/NewAgent (master)."
+    ]
+  ]
+}

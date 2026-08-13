@@ -1,0 +1,49 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "ScriptConfig"
+  ],
+  "Fields": [
+    {
+      "name": "setting_name",
+      "type": "string"
+    },
+    {
+      "name": "setting_value",
+      "type": "any"
+    },
+    {
+      "name": "description",
+      "type": "string"
+    }
+  ],
+  "Values": [
+    [
+      "dotenv_path",
+      "secure/.env",
+      "Relative or absolute path to .env file."
+    ],
+    [
+      "use_external_paths",
+      false,
+      "Toggle to allow script to operate outside of its local ecosystem."
+    ],
+    [
+      "local_lib_directory",
+      "lib/",
+      "Relative path to local dep folder."
+    ],
+    [
+      "master_lib_source",
+      "/storage/emulated/0/Admin/libraries",
+      "Fallback if local lib missing."
+    ],
+    [
+      "log_level",
+      "INFO",
+      "Default log level."
+    ]
+  ]
+}

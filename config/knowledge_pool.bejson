@@ -1,0 +1,184 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "KnowledgeEntry"
+  ],
+  "Fields": [
+    {
+      "name": "info_id",
+      "type": "string"
+    },
+    {
+      "name": "content",
+      "type": "string"
+    },
+    {
+      "name": "category",
+      "type": "string"
+    },
+    {
+      "name": "is_active",
+      "type": "boolean"
+    }
+  ],
+  "Values": [
+    [
+      "bejson_core_1",
+      "BEJSON is a strict tabular JSON format with positional integrity: Fields order matches each Values row's order exactly, enabling index-based access with no key lookups. Every file needs 6 mandatory keys: Format, Format_Version (\"104\"|\"104a\"|\"104db\"), Format_Creator (must be exactly \"Elton Boehnen\"), Records_Type, Fields, Values.",
+      "bejson_format",
+      true
+    ],
+    [
+      "bejson_core_2",
+      "BEJSON 104: single Records_Type entry, complex types allowed (array/object), no custom top-level keys except the optional Parent_Hierarchy. Use for homogeneous high-throughput data (logs, metrics, MFDB entity files).",
+      "bejson_format",
+      true
+    ],
+    [
+      "bejson_core_3",
+      "BEJSON 104a: single Records_Type entry, PRIMITIVE types only (string/integer/number/boolean \u2014 no array/object), custom PascalCase top-level keys allowed for file-level metadata. Use for configs, health checks, MFDB manifests.",
+      "bejson_format",
+      true
+    ],
+    [
+      "bejson_core_4",
+      "BEJSON 104db: 2+ Records_Type entries (multi-entity in one file). First field must be Record_Type_Parent (string). Every other field must declare a Record_Type_Parent assigning it to one entity; fields not applicable to a row's entity are null. No custom top-level keys. Superseded by MFDB for anything beyond small, tightly-coupled datasets.",
+      "bejson_format",
+      true
+    ],
+    [
+      "bejson_core_5",
+      "MFDB layers on BEJSON, it is not a new Format_Version. One BEJSON 104a manifest (fixed filename 104a.mfdb.bejson, Records_Type=[\"mfdb\"]) registers any number of BEJSON 104 entity files (default path data/<entity>.bejson). Each entity file must have Parent_Hierarchy: a relative path back to the manifest.",
+      "bejson_format",
+      true
+    ],
+    [
+      "bejson_core_6",
+      "MFDB discovery is file-local, no directory scan needed: Format_Version=104a + filename ends \".mfdb.bejson\" = manifest. Format_Version=104 + Parent_Hierarchy key present = entity file. Manifest Fields require entity_name and file_path (both unique, non-null); optional: description, record_count, schema_version, primary_key.",
+      "bejson_format",
+      true
+    ],
+    [
+      "bejson_core_7",
+      "MFDB does not enforce referential integrity \u2014 FK relationships are convention only, signaled by an _fk suffix on the field name (e.g. user_id_fk) and/or a primary_key declaration in the manifest. Unresolved FKs are warnings, not errors. Entity records inside one entity file are dense \u2014 no structurally-motivated null padding (unlike 104db).",
+      "bejson_format",
+      true
+    ],
+    [
+      "bejson_core_8",
+      "This agent's own BEJSON tool tags: bejson_fields (list schema), bejson_add_field (append field, null-pads existing rows), bejson_delete_field (remove field + its column from every row), bejson_create_record (append a row), bejson_delete_record (remove row by index), bejson_set_value (set one cell by row+field name or row+column index). All use the field-map cache for name lookups, not linear scans.",
+      "bejson_format",
+      true
+    ],
+    [
+      "behtml_1",
+      "BEHTML (Boehnen Elton HTML) is a deterministic spatial architecture that rejects fluid DOM document-flow in favor of a rigid Cartesian coordinate topology, eliminating \"layout drift\" (sub-pixel misalignment, margin-collapse shifts) by quantizing every node's geometric footprint.",
+      "keyword_only",
+      true
+    ],
+    [
+      "behtml_2",
+      "Y-axis law: Ry (Universal Spatial Constant) = 32px. Every structural DOM node's computed offsetHeight must equal k*Ry for a positive integer k. If a component's natural height isn't divisible by 32, symmetric padding-top/padding-bottom bridges the gap to force the snap.",
+      "keyword_only",
+      true
+    ],
+    [
+      "behtml_3",
+      "The 28px Paradox: form controls visually target 28px height while structurally occupying exactly 1 Ry (32px). CSS: --BEHTML-Ry: 32px; --control-padding-y: 2px; --control-height: calc(var(--BEHTML-Ry) - (2 * var(--control-padding-y))) => 28px visual, 32px DOM footprint.",
+      "keyword_only",
+      true
+    ],
+    [
+      "behtml_4",
+      "X-axis is an Octal Segment Base: 8 columnar addresses X0-X7, each = 12.5% of parent width. BEM width modifiers: --w-12-5 (X0), --w-25 (X0..1), --w-37-5 (X0..2), --w-50 (X0..3), --w-62-5 (X0..4), --w-75 (X0..5), --w-100 (X0..7), e.g. .behtml-grid__cell--w-50.",
+      "keyword_only",
+      true
+    ],
+    [
+      "behtml_5",
+      "Horizontally Strong Containers: apply min-width: 0 plus overflow-x: auto to a BEM cell block so oversized inner content (e.g. a wide table) scrolls internally instead of stretching the parent and corrupting the 12.5% X-axis math.",
+      "keyword_only",
+      true
+    ],
+    [
+      "behtml_6",
+      "BEM insulation is mandatory: every component gets exactly one class (specificity 0,1,0), no descendant selectors. Two separate namespaces: Grid layer (.behtml-grid, __row, __row--3r, __cell, __cell--w-50) for spatial topology, and Component layer (.behtml-control, __input, __button--danger) for the atomic widgets inside cells (margin: 0, they fill the cell).",
+      "keyword_only",
+      true
+    ],
+    [
+      "behtml_7",
+      "State changes are done via BEM modifier classes only, never inline styles (no style=\"...\" attributes). JS appends/removes a modifier like .behtml-grid__cell--active-column; the CSS layer owns all painting/layout for that state.",
+      "keyword_only",
+      true
+    ],
+    [
+      "behtml_8",
+      "Tri-Color Immutability Palette: Pure White #FFFFFF (surfaces/data entry/active content), Pure Black #000000 (toolbars, headers, grid boundaries/structural anchors), Brand Red #DE2626 (the Elton Boehnen accent - interactive highlights, technical readouts, critical alerts).",
+      "keyword_only",
+      true
+    ],
+    [
+      "behtml_9",
+      "Contrast laws: (1) black text is strictly prohibited on a #DE2626 background - must be white; (2) red text on black background is restricted to high-visibility technical metrics/debug footers only; (3) white backgrounds permit both black standard text and red accent text.",
+      "keyword_only",
+      true
+    ],
+    [
+      "behtml_10",
+      "Ethereal vs Tangible state modeling: Ethereal (mathematical boundaries) = dotted rgba(222,38,38,0.12) row guides + 2px dashed #DE2626 columnar raycast lines. Tangible (selected/live objects) = solid 2px #DE2626 outline plus a dual neon glow box-shadow: inset 0 0 8px rgba(222,38,38,0.5), 0 0 10px rgba(222,38,38,0.7).",
+      "keyword_only",
+      true
+    ],
+    [
+      "behtml_11",
+      "Integrity & Raycasting Engine: nodes carry data-behtml-y=\"7..9\" and data-behtml-x=\"50..100%\" / data-x-span attributes mapping cartesian coordinates. Clicking an X-axis ruler segment projects vertical boundary lines (.behtml-v-line) downward and tags every intersecting .behtml-grid__cell with the --active-column modifier.",
+      "keyword_only",
+      true
+    ],
+    [
+      "behtml_12",
+      "Anti-Drift Auditor: on init and on every resize, the engine loops [data-behtml-y] nodes, derives the expected height (k*32px) and compares it to the physical computed offsetHeight. Any mismatch (e.g. 33px from an un-reset border) throws a console exception naming the exact node that broke the matrix.",
+      "keyword_only",
+      true
+    ],
+    [
+      "bookwriter_1",
+      "Book Writer tool location & invocation: tools/bookwriter/Cli_Bookwriter.py. It is a stateless single-shot CLI - run it once per step via shell, e.g. `python3 tools/bookwriter/Cli_Bookwriter.py --status`. Active plan/auto-run state persists between calls in that tool's own data/persist/selection_state.104a.bejson.",
+      "keyword_only",
+      true
+    ],
+    [
+      "bookwriter_2",
+      "Book Writer full workflow order: (1) optionally attach reference material with --add-context-file/--add-context-folder, (2) `--new-plan NAME` then `--generate-plan \"topic\" --chapters N` to outline, (3) set `--auto-run on` or `off`, (4) `--write-book` (alias `--resume-plan`) to generate. Output lands at books/BEJSON/<name>.bejson (working record) and books/HTML/<name>.html (final compiled book).",
+      "keyword_only",
+      true
+    ],
+    [
+      "bookwriter_3",
+      "Book Writer core flags: --new-plan NAME, --select-plan NAME, --generate-plan PROMPT, --chapters N (default 8), --view-plan, --list-plans, --write-book / --resume-plan, --auto-run [on|off], --model MODEL_ID (default gemini-2.5-flash), --export-env-template, --status.",
+      "keyword_only",
+      true
+    ],
+    [
+      "bookwriter_4",
+      "Book Writer context flags (persist under data/context/ until explicitly removed): --add-context-file/--acf PATH, --add-context-folder/--acd PATH, --select-context-file/--scf ID, --deselect-context-file/--dcf, --remove-context-file/--rcf ID (use --scd/--dcd/--rcd for the folder equivalents), --list-context (active items marked with *).",
+      "keyword_only",
+      true
+    ],
+    [
+      "bookwriter_5",
+      "Book Writer auto-run semantics: `--auto-run on` loops through every unwritten chapter in one run and auto-compiles the HTML at the end (headless mode). `--auto-run off` writes exactly one chapter per `--write-book` call and pauses, letting you inspect data/temp/<plan_name>/ scratch markdown before running `--resume-plan` for the next chapter.",
+      "keyword_only",
+      true
+    ],
+    [
+      "bookwriter_6",
+      "Book Writer is crash-safe: chapters already committed to books/BEJSON/<name>.bejson survive interruption (network drop, quota error, kill). Re-running --write-book automatically resumes at the next incomplete chapter, no duplication or loss. Gemini keys resolve secure/.env -> GEMINI_KEY_1..21/GEMINI_API_KEY/GOOGLE_API_KEY env vars -> device-wide env_file.json fallback.",
+      "keyword_only",
+      true
+    ]
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "ModelConfig"
+  ],
+  "Fields": [
+    {
+      "name": "setting_name",
+      "type": "string"
+    },
+    {
+      "name": "setting_value",
+      "type": "string"
+    }
+  ],
+  "Values": [
+    [
+      "active_model",
+      "gemini-3.6-flash"
+    ]
+  ]
+}

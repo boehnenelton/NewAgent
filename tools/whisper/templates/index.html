@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whisper Transcription Service</title>
+    <style>
+        :root {
+            --primary: #2196F3;
+            --bg: #f5f5f5;
+            --card: #ffffff;
+            --text: #333333;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: var(--card);
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        h1 { font-size: 24px; margin-bottom: 20px; text-align: center; color: var(--primary); }
+        .upload-area {
+            border: 2px dashed #ccc;
+            padding: 40px;
+            text-align: center;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: border-color 0.3s;
+            margin-bottom: 20px;
+        }
+        .upload-area:hover { border-color: var(--primary); }
+        #file-info { margin-top: 10px; font-size: 14px; color: #666; }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        #result-area {
+            margin-top: 30px;
+            padding: 15px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            min-height: 100px;
+            white-space: pre-wrap;
+            border: 1px solid #eee;
+            display: none;
+        }
+        .loader {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        @media (max-width: 480px) {
+            .container { padding: 15px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Whisper Transcribe</h1>
+        <div class="upload-area" id="drop-zone">
+            <p>Tap to select or drag audio file here</p>
+            <input type="file" id="file-input" hidden accept="audio/*">
+            <div id="file-info"></div>
+        </div>
+        <button id="transcribe-btn" disabled>Transcribe Audio</button>
+        
+        <div class="loader" id="loader">
+            <p>Transcribing... please wait (this may take a minute)</p>
+        </div>
+
+        <div id="result-area"></div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileInfo = document.getElementById('file-info');
+        const transcribeBtn = document.getElementById('transcribe-btn');
+        const resultArea = document.getElementById('result-area');
+        const loader = document.getElementById('loader');
+
+        dropZone.onclick = () => fileInput.click();
+
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                fileInfo.textContent = 'Selected: ' + file.name + ' (' + (file.size / 1024 / 1024).toFixed(2) + ' MB)';
+                transcribeBtn.disabled = false;
+            }
+        };
+
+        transcribeBtn.onclick = async () => {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            transcribeBtn.disabled = true;
+            resultArea.style.display = 'none';
+            loader.style.display = 'block';
+
+            try {
+                const response = await fetch('/transcribe', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                
+                if (data.error) {
+                    resultArea.textContent = 'Error: ' + data.error;
+                    resultArea.style.color = 'red';
+                } else {
+                    resultArea.textContent = data.text;
+                    resultArea.style.color = '#333';
+                }
+            } catch (err) {
+                resultArea.textContent = 'Connection Error: ' + err.message;
+                resultArea.style.color = 'red';
+            } finally {
+                loader.style.display = 'none';
+                resultArea.style.display = 'block';
+                transcribeBtn.disabled = false;
+            }
+        };
+    </script>
+</body>
+</html>

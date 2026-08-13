@@ -1,0 +1,72 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "PlanTask"
+  ],
+  "Fields": [
+    {
+      "name": "Task_ID",
+      "type": "string"
+    },
+    {
+      "name": "Task_Name",
+      "type": "string"
+    },
+    {
+      "name": "Is_Ready",
+      "type": "boolean"
+    },
+    {
+      "name": "Is_Audit",
+      "type": "boolean"
+    },
+    {
+      "name": "Author_ID",
+      "type": "string"
+    }
+  ],
+  "Writing_Type": "standard book",
+  "Writing_Category": "Non-Fiction",
+  "Writing_Title": "Mastering Core BEJSON in TypeScript: Schema, Chunking, and Database Architecture",
+  "Book_Goal": "Provide a thorough, production-grade developer reference manual and implementation guide for the Core BEJSON TypeScript library, covering low-level document parsing, strict typing, schema validation, field mapping, project chunking, and the MFDB database packaging architecture.",
+  "Section_Count": 5,
+  "Values": [
+    [
+      "TASK1",
+      "Chapter 1: Architecture, Core Schemas, and TypeScript Type System",
+      true,
+      false,
+      "Elton Boehnen"
+    ],
+    [
+      "TASK2",
+      "Chapter 2: Low-Level Core Operations, Document Parsing, and Field Mapping",
+      true,
+      false,
+      "Elton Boehnen"
+    ],
+    [
+      "TASK3",
+      "Chapter 3: Schema Validation Engines and Document Verification Routines",
+      true,
+      false,
+      "Elton Boehnen"
+    ],
+    [
+      "TASK4",
+      "Chapter 4: Project Chunking, Binary File Preservation, and Package Versioning",
+      true,
+      false,
+      "Elton Boehnen"
+    ],
+    [
+      "TASK5",
+      "Chapter 5: MFDB Multi-File Database Core and MFDB132Archive Session Lifecycle",
+      true,
+      false,
+      "Elton Boehnen"
+    ]
+  ]
+}

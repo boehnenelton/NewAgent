@@ -1,0 +1,16 @@
+# Runtime artifacts - not committed
+logs/
+backups/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# Sensitive config - keys managed locally
+config/keys.bejson
+config/secureenv_file*
+
+# Empty placeholder dirs tracked via .gitkeep
+
+# Bookwriter secrets
+tools/bookwriter/secure/
