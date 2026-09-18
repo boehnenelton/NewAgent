@@ -15,7 +15,6 @@
 - [Key Features](#-key-features)
 - [System Architecture & Visual Visualizations](#-system-architecture--visual-visualizations)
   - [High-Level Architectural Overview](#high-level-architectural-overview)
-  - [Visual Architecture Slide Gallery](#visual-architecture-slide-gallery)
   - [Directory Layout Architecture](#directory-layout-architecture)
 - [Persistence Engine & Data Schemas](#-persistence-engine--data-schemas)
   - [BEJSON 104a / 104db Positional Integrity Standard](#bejson-104a--104db-positional-integrity-standard)
@@ -50,6 +49,8 @@
 
 The system is designed adhering to a brutalist, high-contrast administrative design language (**#FFFFFF** background, **#000000** foreground, **#DE2626** accent) and strict **BEJSON 104a/104db/105** data schemas. Every data structure within NewAgent guarantees field map cache resolution ($O(1)$ property mapping), complete positional integrity, and zero hardcoded index assumptions.
 
+![Slide 1: System Overview](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_1.png)
+
 With built-in dynamic keyword-triggered context dripping, nearest-wins hierarchical context inheritance (`context.bejson`), lock-protected token generation, background task execution, and a multi-role sub-agent coordination pipeline, NewAgent delivers an autonomous, auditable, and extensible workspace for software engineering and data pipeline tasks.
 
 ---
@@ -58,7 +59,13 @@ With built-in dynamic keyword-triggered context dripping, nearest-wins hierarchi
 
 - ⚡ **Dual AI Engines**: Toggle seamlessly between raw REST multi-key failover (`RestPrompter`) and Google Gemini Interactions native API streaming (`engine_interactions.py`).
 - 🔐 **Multi-Key Failover & Circuit Breakers**: Automatic credential rotation across up to 25 Gemini API keys with 3-consecutive-failure circuit breakers and key cooldown tracking (`key_state.bejson`).
+
+![Slide 2: Dual Model Engine Architecture](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_2.png)
+
 - 🧠 **Dynamic Keyword Context Dripper**: Scans incoming prompt turns against a weighted knowledge base (`knowledge_pool.bejson`) to inject precise technical documentation and worked schema examples into the turn context window.
+
+![Slide 3: Context Assembly & Keyword Dripper](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_3.png)
+
 - 🌳 **Hierarchical Context Inheritance (`INIT`)**: Recursively resolves ancestor `context.bejson` files from root to leaf, allowing child subdirectories to override or inherit project ground rules cleanly.
 - 🤖 **Sub-Agent Orchestration Engine**: Built-in profile-gated sub-agent launcher (`lib_bejson_newagent_subagent_*.py`) supporting inter-agent mailbox signaling, custom action allowlists, and unattended task delegation.
 - 🌐 **Web & CLI Access Interfaces**: Run via an interactive terminal (`agent.py`), a headless automation runner (`cliagent.py`), or a responsive web terminal (`webagent.py`) featuring `X-Auth-Token` authentication and live execution logging.
@@ -111,41 +118,7 @@ With built-in dynamic keyword-triggered context dripping, nearest-wins hierarchi
 +-----------------------------------------------------------------------------------+
 ```
 
-### Visual Architecture Slide Gallery
-
-Below is the complete architectural visualization breakdown of NewAgent, illustrating its core subsystems, execution pipelines, data boundaries, and multi-agent coordination flows:
-
-````carousel
-![Slide 1: System Overview](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_1.png)
-<!-- slide -->
-![Slide 2: Dual Model Engine Architecture](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_2.png)
-<!-- slide -->
-![Slide 3: Context Assembly & Keyword Dripper](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_3.png)
-<!-- slide -->
 ![Slide 4: Action Dispatcher & Execution Flow](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_4.png)
-<!-- slide -->
-![Slide 5: BEJSON 104a vs 104db Storage Rules](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_5.png)
-<!-- slide -->
-![Slide 6: Sub-Agent Lifecycle & Mailbox Signaling](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_6.png)
-<!-- slide -->
-![Slide 7: Security Boundaries & Hardening Layers](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_7.png)
-<!-- slide -->
-![Slide 8: Key Failover & Cooldown Pipeline](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_8.png)
-<!-- slide -->
-![Slide 9: Hierarchical Context Inheritance](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_9.png)
-<!-- slide -->
-![Slide 10: Environment Sourcing Hierarchy](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_10.png)
-<!-- slide -->
-![Slide 11: Web Terminal & Token Authentication](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_11.png)
-<!-- slide -->
-![Slide 12: NA-CMS Integrated Architecture](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_12.png)
-<!-- slide -->
-![Slide 13: NA-WebToolkit Execution Flow](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_13.png)
-<!-- slide -->
-![Slide 14: Session Archival & Logging Pipeline](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_14.png)
-<!-- slide -->
-![Slide 15: Sub-Agent Profile Security Matrix](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_15.png)
-````
 
 ### Directory Layout Architecture
 
@@ -220,6 +193,8 @@ NewAgent/
 
 All internal storage across NewAgent strictly adheres to the **BEJSON 104a** (single-entity document) and **BEJSON 104db** (multi-entity relational table) specifications. 
 
+![Slide 5: BEJSON 104a vs 104db Storage Rules](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_5.png)
+
 Key constraints enforced across the persistence layer:
 1. **Positional Integrity**: The order of attributes listed in the `Fields` header array must match the column order in every row within the `Values` array.
 2. **Field Map Cache Mandate**: Direct index lookups (e.g., `row[2]`) are strictly forbidden in application code. All operations resolve indices dynamically via `bejson_core_get_field_map()` or `bejson_core_get_field_index()`.
@@ -272,6 +247,8 @@ For multi-entity workloads (e.g., in `NA-CMS`), NewAgent utilizes **MFDB (Multi-
 ### Sub-Agent Profiles & Mailbox Signaling
 
 NewAgent includes an autonomous multi-agent orchestration framework (`lib_bejson_newagent_subagent_*.py`). Sub-agents operate with isolated system prompts, custom action tag allowlists, and dedicated session tables (`.subagent_sessions.104.bejson`).
+
+![Slide 6: Sub-Agent Lifecycle & Mailbox Signaling](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_6.png)
 
 Communication between the main agent and sub-agents occurs via a lock-protected mailbox signaling engine (`.subagent_signals.104.bejson`):
 - **Signals**: `TASK_ASSIGN`, `TASK_COMPLETE`, `TASK_FAILED`, `PAUSE`, `RESUME`.
@@ -344,6 +321,8 @@ NewAgent sources API credentials and system paths dynamically using a two-tier c
 1. **Secure Credentials**: `/storage/emulated/0/.env/secure/secureenv_file.json` (Contains `GEMINI_KEY_1..25`, `GROQ_KEY_*`, `OPENROUTER_KEY_*`).
 2. **User Non-Sensitive Paths**: `/storage/emulated/0/.env/user/paths.json` (Contains `INTERNAL_STORAGE`, `SD_CARD`, `PROJECT_ROOT`, `ADMIN`).
 
+![Slide 10: Environment Sourcing Hierarchy](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_10.png)
+
 > [!NOTE]
 > If the new split environment paths are absent, NewAgent safely falls back to legacy `env_file.json` sourcing without interrupting startup. Blank schema templates are provided in `env_templates/`.
 
@@ -366,6 +345,8 @@ python3 agent.py
   - `/model`: View and switch active Gemini catalog tiers.
   - `/budget`: Inspect token consumption and context bubble allocation.
 
+![Slide 9: Hierarchical Context Inheritance](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_9.png)
+
 ### Web Terminal UI (`webagent.py`)
 
 Launch the responsive web terminal server:
@@ -376,6 +357,8 @@ python3 webagent.py --port 5000
 
 - Access the web interface at `http://127.0.0.1:5000`.
 - **Authentication**: On first run, `webagent.py` generates a secure access token saved to `config/config.json` (`web_auth_token`). Pass this token via the `X-Auth-Token` header or `?token=` query parameter.
+
+![Slide 11: Web Terminal & Token Authentication](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_11.png)
 
 ### Headless Scripting Client (`cliagent.py`)
 
@@ -395,6 +378,8 @@ python3 cliagent.py --execute "list_dir Cwd" --json
 
 NewAgent incorporates comprehensive security guardrails designed to prevent unauthorized code execution, key leakage, and path traversal vulnerabilities:
 
+![Slide 7: Security Boundaries & Hardening Layers](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_7.png)
+
 ### Authentication & Access Control
 - **Web Terminal Guard**: `webagent.py` and `JobMaker.py` enforce `X-Auth-Token` authentication with constant-time string comparisons (`hmac.compare_digest`) on all HTTP endpoints.
 - **Loopback Binding Default**: Web servers bind to `127.0.0.1` by default to prevent unintended LAN exposure.
@@ -406,6 +391,8 @@ NewAgent incorporates comprehensive security guardrails designed to prevent unau
 ### Environment Credential Isolation
 - **API Key Masking**: Raw API key values (`GEMINI_KEY_*`) are loaded exclusively into memory and masked in terminal output and transcript logs (`REDACTED_KEY_PLACEHOLDER`).
 
+![Slide 8: Key Failover & Cooldown Pipeline](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_8.png)
+
 ---
 
 ## 🧰 Included Tool Suites
@@ -415,8 +402,13 @@ Located in `tools/NA-CMS/`, **NA-CMS** is a standalone, BEJSON-backed static sit
 - **Features**: Dynamic theme engine, asset optimization pipeline, automated breadcrumb generation, and HTML sanitization.
 - **Execution**: Run via `python3 tools/NA-CMS/Admin.py`.
 
+![Slide 12: NA-CMS Integrated Architecture](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_12.png)
+
 ### NA-WebToolkit & NA-Chunker
 - **NA-WebToolkit** (`tools/NA-WebToolkit/`): High-speed, headless scraping engine supporting HTML extraction, markdown conversion, and media downloading using list-form subprocess calls.
+
+![Slide 13: NA-WebToolkit Execution Flow](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_13.png)
+
 - **NA-Chunker** (`tools/NA-Chunker/`): Codebase parsing tool that breaks large Python and JavaScript codebases into token-bounded chunks for LLM consumption.
 
 ---
@@ -425,9 +417,14 @@ Located in `tools/NA-CMS/`, **NA-CMS** is a standalone, BEJSON-backed static sit
 
 Per the latest security and architecture audit (`AUDIT.md` & `dev/security-notes.md`), the following items are tracked for future iterations:
 
+![Slide 14: Session Archival & Logging Pipeline](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_14.png)
+
 - [x] **Remediated**: Lock-protected `web_auth_token` generation preventing race conditions during concurrent server boot (PKG110).
 - [x] **Remediated**: Strict BEJSON field type validation rejecting non-standard types like `any` (PKG104).
 - [x] **Remediated**: Sub-agent signal mailbox implementation and action tag filtering (PKG112).
+
+![Slide 15: Sub-Agent Profile Security Matrix](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_15.png)
+
 - [ ] **Roadmap Item 1**: Implement automatic mtime-based caching for context bubble policy reads (`context_bubble.assemble_bubble`).
 - [ ] **Roadmap Item 2**: Replace fixed-delay network retries in `engine_rest.py` with exponential backoff and randomized jitter.
 - [ ] **Roadmap Item 3**: Standardize all sub-agent file lock routines to use `ResilientPIDLock`.
