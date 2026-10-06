@@ -1,453 +1,514 @@
-# NewAgent
+# NewAgent: Autonomous Multi-Provider Agentic AI Ecosystem & MFDB Framework
 
-[![Release Version](https://img.shields.io/badge/version-3.33.0-red.svg)](https://github.com/boehnenelton/NewAgent)
-[![Package Version](https://img.shields.io/badge/package-114-black.svg)](https://github.com/boehnenelton/NewAgent)
-[![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-red.svg)](LICENSE)
-[![Python Version](https://img.shields.io/badge/python-3.10%2B-black.svg)](https://www.python.org/)
-[![BEJSON Standard](https://img.shields.io/badge/BEJSON-104a%20%7C%20104db%20%7C%20105-DE2626.svg)](file:///storage/emulated/0/Admin/repos/New/NewAgent/config/constant_config.bejson)
-
-> **Ground-up, high-performance asynchronous agent terminal client and multi-agent coordination system featuring dual REST and Gemini Interactions engines, BEJSON positional integrity, and sub-agent orchestration.**
+> **Ground-Up Asynchronous Agent Engine with Dual REST & Interactions Dispatch, Multi-File BEJSON Storage, Subagent Swarm Architecture, and Integrated CMS Tooling.**
 
 ---
 
-## 📋 Table of Contents
-- [Overview](#-overview)
-- [Key Features](#-key-features)
-- [System Architecture & Visual Visualizations](#-system-architecture--visual-visualizations)
-  - [High-Level Architectural Overview](#high-level-architectural-overview)
-  - [Directory Layout Architecture](#directory-layout-architecture)
-- [Persistence Engine & Data Schemas](#-persistence-engine--data-schemas)
-  - [BEJSON 104a / 104db Positional Integrity Standard](#bejson-104a--104db-positional-integrity-standard)
-  - [MFDB Relational Database Schema](#mfdb-relational-database-schema)
-- [Sub-Agent Orchestration Framework](#-sub-agent-orchestration-framework)
-  - [Sub-Agent Profiles & Mailbox Signaling](#sub-agent-profiles--mailbox-signaling)
-  - [Sub-Agent CLI Management (`subagent_admin.py`)](#sub-agent-cli-management-subagent_adminpy)
-- [Installation & Setup](#-installation--setup)
-  - [Prerequisites](#prerequisites)
-  - [Quick Start](#quick-start)
-  - [Environment Sourcing Setup](#environment-sourcing-setup)
-- [Usage & Execution Interfaces](#-usage--execution-interfaces)
-  - [Interactive CLI Agent (`agent.py`)](#interactive-cli-agent-agentpy)
-  - [Web Terminal UI (`webagent.py`)](#web-terminal-ui-webagentpy)
-  - [Headless Scripting Client (`cliagent.py`)](#headless-scripting-client-cliagentpy)
-- [Security & System Hardening](#-security--system-hardening)
-  - [Authentication & Access Control](#authentication--access-control)
-  - [Path Traversal & Execution Safeguards](#path-traversal--execution-safeguards)
-  - [Environment Credential Isolation](#environment-credential-isolation)
-- [Included Tool Suites](#-included-tool-suites)
-  - [NA-CMS (Content Management System)](#na-cms-content-management-system)
-  - [NA-WebToolkit & NA-Chunker](#na-webtoolkit--na-chunker)
-- [Known Issues & Audit Roadmap](#-known-issues--audit-roadmap)
-- [Contributing](#-contributing)
-- [License & Author Credits](#-license--author-credits)
+## Table of Contents
+
+- [1. Executive Summary & Vision](#1-executive-summary--vision)
+- [2. Core Architectural Principles](#2-core-architectural-principles)
+- [3. System Architecture & Component Topology](#3-system-architecture--component-topology)
+- [4. Dual Inference Engine Architecture](#4-dual-inference-engine-architecture)
+  - [4.1 REST API Prompter & Key Cooldown Engine](#41-rest-api-prompter--key-cooldown-engine)
+  - [4.2 Native Tool-Calling & Interactions Engine](#42-native-tool-calling--interactions-engine)
+- [5. Multi-Provider Ecosystem & API Support](#5-multi-provider-ecosystem--api-support)
+  - [5.1 Google Gemini API Driver](#51-google-gemini-api-driver)
+  - [5.2 Groq Accelerated API Driver](#52-groq-accelerated-api-driver)
+  - [5.3 OpenRouter Multi-Model Gateway](#53-openrouter-multi-model-gateway)
+  - [5.4 HuggingFace Inference API Driver](#54-huggingface-inference-api-driver)
+- [6. Context Window & Context Bubble Management](#6-context-window--context-bubble-management)
+  - [6.1 Dynamic Token Budget Allocation](#61-dynamic-token-budget-allocation)
+  - [6.2 Keyword-Triggered Knowledge Pool Drip](#62-keyword-triggered-knowledge-pool-drip)
+  - [6.3 Observer Compression & Amnesia Protocol](#63-observer-compression--amnesia-protocol)
+- [7. Distributed Sub-Agent System](#7-distributed-sub-agent-system)
+  - [7.1 Subagent Profiles & Lifecycle Management](#71-subagent-profiles--lifecycle-management)
+  - [7.2 Inter-Agent Signaling & Session Resumption](#72-inter-agent-signaling--session-resumption)
+  - [7.3 Subagent Administration CLI](#73-subagent-administration-cli)
+- [8. Offline Job Planning & Task Tracking (JobMaker)](#8-offline-job-planning--task-tracking-jobmaker)
+- [9. Data Layer: BEJSON 104a & MFDB Framework](#9-data-layer-bejson-104a--mfdb-framework)
+  - [9.1 Field Map Cache & Positional Integrity](#91-field-map-cache--positional-integrity)
+  - [9.2 MFDB Multi-File Database Persistence](#92-mfdb-multi-file-database-persistence)
+  - [9.3 PID Locking & Resilient File IO](#93-pid-locking--resilient-file-io)
+
+![NewAgent Architecture Diagram - Slide 1](images/NewAgent_System_Architecture_-_Slide_1.png)
+
+- [10. Integrated Suite of Subsystem Tools](#10-integrated-suite-of-subsystem-tools)
+  - [10.1 NA-CMS (BEJSON-Backed CMS)](#101-na-cms-bejson-backed-cms)
+  - [10.2 NA-WebToolkit (Headless Browser & Scraper)](#102-na-webtoolkit-headless-browser--scraper)
+  - [10.3 NA-Chunker (Dataset & Archive Chunker)](#103-na-chunker-dataset--archive-chunker)
+  - [10.4 NA-MD2HTML (Publication Compiler)](#104-na-md2html-publication-compiler)
+  - [10.5 NA-Init (Workspace Bootstrapper)](#105-na-init-workspace-bootstrapper)
+- [11. Interfaces & User Experience](#11-interfaces--user-experience)
+  - [11.1 Web Terminal GUI (`webagent.py`)](#111-web-terminal-gui-webagentpy)
+  - [11.2 Interactive CLI & TUI (`cliagent.py`)](#112-interactive-cli--tui-cliagentpy)
+- [12. Slash Commands & Directive Engine](#12-slash-commands--directive-engine)
+- [13. Environment Sourcing & Credential Security](#13-environment-sourcing--credential-security)
+- [14. Directory Topology & Codebase Map](#14-directory-topology--codebase-map)
+- [15. Verification, Audit & Quality Assurance](#15-verification-audit--quality-assurance)
+- [16. Operations & Deployment Guide](#16-operations--deployment-guide)
+- [17. Author & Maintainer Crediting](#17-author--maintainer-crediting)
 
 ---
 
-## 🔍 Overview
+## 1. Executive Summary & Vision
 
-**NewAgent** is an enterprise-grade, asynchronous AI agent terminal client and multi-agent execution framework engineered specifically for Termux, Android, Linux, and macOS environments. Built from the ground up to replace legacy sync-polling agent loops, NewAgent couples a fast, decoupled execution core with dual AI provider engines: a raw REST engine supporting multi-key rotation and a native Gemini Interactions engine for high-speed streaming and function calling.
+**NewAgent** represents a state-of-the-art, ground-up asynchronous agentic AI ecosystem engineered explicitly for high-throughput, local-first environments, Termux/Linux runtimes, and multi-model autonomous orchestration. Built upon strict data schema guarantees and modular Python 3.10+ primitives, NewAgent decouples model inference from local execution, enabling seamless integration across cloud API providers (Google Gemini, Groq, OpenRouter, HuggingFace) while preserving total local persistence via the BEJSON 104a and MFDB v1.31/v1.32 formats.
 
-The system is designed adhering to a brutalist, high-contrast administrative design language (**#FFFFFF** background, **#000000** foreground, **#DE2626** accent) and strict **BEJSON 104a/104db/105** data schemas. Every data structure within NewAgent guarantees field map cache resolution ($O(1)$ property mapping), complete positional integrity, and zero hardcoded index assumptions.
+Unlike conventional single-loop LLM scripts, NewAgent features a dual-engine architecture capable of operating in both non-intrusive REST prompt/response mode and native XML/JSON tool-calling Interactions mode. It incorporates dynamic sliding context window budgeting, keyword-draped knowledge injection, resilient PID-locked session handling, sub-agent swarm management, and a comprehensive suite of integrated production tools including a full content management system (NA-CMS), web scraping toolkit (NA-WebToolkit), dataset chunker (NA-Chunker), and publication compiler (NA-MD2HTML).
 
-![Slide 1: System Overview](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_1.png)
+Key Capabilities:
+- Multi-provider API abstraction with automatic key rotation and rate-limit cooldown management.
+- Dynamic Context Bubble context window budgeting and sliding token allocation.
+- Hierarchical sub-agent swarm dispatch with profile isolation and inter-agent signaling.
+- High-concurrency BEJSON 104a and Multi-File Database (MFDB) persistent data layer.
+- Offline pre-planned job execution via JobMaker BEJSON checklists.
+- Dual interface support providing both a web terminal GUI (`webagent.py`) and a TUI/CLI (`cliagent.py`).
 
-With built-in dynamic keyword-triggered context dripping, nearest-wins hierarchical context inheritance (`context.bejson`), lock-protected token generation, background task execution, and a multi-role sub-agent coordination pipeline, NewAgent delivers an autonomous, auditable, and extensible workspace for software engineering and data pipeline tasks.
+![NewAgent Architecture Diagram - Slide 2](images/NewAgent_System_Architecture_-_Slide_2.png)
 
----
-
-## ✨ Key Features
-
-- ⚡ **Dual AI Engines**: Toggle seamlessly between raw REST multi-key failover (`RestPrompter`) and Google Gemini Interactions native API streaming (`engine_interactions.py`).
-- 🔐 **Multi-Key Failover & Circuit Breakers**: Automatic credential rotation across up to 25 Gemini API keys with 3-consecutive-failure circuit breakers and key cooldown tracking (`key_state.bejson`).
-
-![Slide 2: Dual Model Engine Architecture](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_2.png)
-
-- 🧠 **Dynamic Keyword Context Dripper**: Scans incoming prompt turns against a weighted knowledge base (`knowledge_pool.bejson`) to inject precise technical documentation and worked schema examples into the turn context window.
-
-![Slide 3: Context Assembly & Keyword Dripper](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_3.png)
-
-- 🌳 **Hierarchical Context Inheritance (`INIT`)**: Recursively resolves ancestor `context.bejson` files from root to leaf, allowing child subdirectories to override or inherit project ground rules cleanly.
-- 🤖 **Sub-Agent Orchestration Engine**: Built-in profile-gated sub-agent launcher (`lib_bejson_newagent_subagent_*.py`) supporting inter-agent mailbox signaling, custom action allowlists, and unattended task delegation.
-- 🌐 **Web & CLI Access Interfaces**: Run via an interactive terminal (`agent.py`), a headless automation runner (`cliagent.py`), or a responsive web terminal (`webagent.py`) featuring `X-Auth-Token` authentication and live execution logging.
-- 📊 **Strict BEJSON 104a/104db Data Standards**: Integrated schema validation enforcing 6-value type vocabularies (`string`, `integer`, `number`, `boolean`, `array`, `object`), atomic file writes, and field-map caching.
-- 🛠️ **Embedded Production Toolkits**: Bundles specialized sub-tools including `NA-CMS` (BEJSON-backed static site engine and admin panel), `NA-WebToolkit` (headless scraping engine), and `NA-Chunker`.
 
 ---
 
-## 🛠️ System Architecture & Visual Visualizations
+## 2. Core Architectural Principles
 
-### High-Level Architectural Overview
+NewAgent adheres strictly to a set of core engineering mandates designed to guarantee performance, maintainability, and data security:
+
+1. **Zero Hardcoded Absolute Paths**: All file operations resolve dynamically through `$SCRIPT_PATH` relative navigation or canonical environment variable manifests (`/storage/emulated/0/.env/secure/secureenv_file.json` and `/storage/emulated/0/.env/user/paths.json`).
+2. **BEJSON Positional Integrity & O(1) Field Map Caching**: Structural records are serialized in BEJSON 104a table format. Field resolution relies on runtime Field Map Caches to eliminate hardcoded positional indices and guarantee key-to-column mapping integrity even across schema evolution.
+3. **Boundary-Layer Data Sanitization**: Input strings, dictionary keys, and raw payloads are stripped of whitespace and sanitized at boundary interfaces prior to caching or database insertion.
+4. **Dual-Layer Environment Credential Isolation**: Sensitive API credentials, tokens, and SSH keys reside strictly in isolated secure storage locations and are never committed to source repositories.
+5. **Resilient Multiprocess Lock Management**: High-concurrency operations utilize atomic file replacement (`.tmp` to final path via `mv`) and lockfiles managed by PID-aware guard modules (`lib_bejson_Core_bejson_path_guard.py`).
+6. **Strict Logging & Error Transparency**: All error states are logged to standard Python `logging` infrastructure with explicit severity levels and stack traces, avoiding silent try/except swallows or unhandled crashes.
+
+---
+
+## 3. System Architecture & Component Topology
+
+The architecture of NewAgent is organized into a modular, multi-tier hierarchy where entry points delegate processing to specialized libraries, extensions, and external toolkits.
 
 ```
-+-----------------------------------------------------------------------------------+
-|                            User Access & Execution Layer                          |
-|   +-----------------------+   +-----------------------+   +-------------------+   |
-|   |   agent.py (CLI UI)   |   |  webagent.py (Web UI) |   | cliagent.py (Head)|   |
-|   +-----------------------+   +-----------------------+   +-------------------+   |
-+-----------------------------------------------------------------------------------+
-                                        |
-                                        v
-+-----------------------------------------------------------------------------------+
-|                         Core Orchestration & Context Engine                       |
-|   +---------------------------------------------------------------------------+   |
-|   | Context Bubble Assembler (knowledge_pool, triggers.bejson, context.bejson)|   |
-|   +---------------------------------------------------------------------------+   |
-|   | Action Parser & Tag Dispatcher (<exec>, <write_file>, <bejson_create>, etc)|   |
-|   +---------------------------------------------------------------------------+   |
-|   | Sub-Agent Coordinator & Signal Mailbox (subagent_admin.py / profiles)     |   |
-|   +---------------------------------------------------------------------------+   |
-+-----------------------------------------------------------------------------------+
-                                        |
-                    +-------------------+-------------------+
-                    |                                       |
-                    v                                       v
-+---------------------------------------+   +---------------------------------------+
-|        Engine REST / Multi-Key        |   |       Engine Interactions Native      |
-|  (RestPrompter + key_state.bejson)    |   |  (Gemini Interactions + Native Tools) |
-+---------------------------------------+   +---------------------------------------+
-                    |                                       |
-                    +-------------------+-------------------+
-                                        |
-                                        v
-+-----------------------------------------------------------------------------------+
-|                          Persistence & Schema Engine                              |
-|   +---------------------------------------------------------------------------+   |
-|   | BEJSON 104a Single-Entity Stores  | BEJSON 104db Multi-Entity Tables           |
-|   | MFDB Relational Multi-File DB     | Field Map Cache Resolution Engine         |
-|   +---------------------------------------------------------------------------+   |
-+-----------------------------------------------------------------------------------+
++-----------------------------------------------------------------------+
+|                         User Interfaces                               |
+|   +-----------------------+               +-----------------------+   |
+|   |  webagent.py (GUI)    |               |  cliagent.py (TUI)    |   |
+|   +-----------+-----------+               +-----------+-----------+   |
++---------------+---------------------------------------+---------------+
+                |                                       |
+                v                                       v
++-----------------------------------------------------------------------+
+|                    Core Orchestration Engine                          |
+
+![NewAgent Architecture Diagram - Slide 3](images/NewAgent_System_Architecture_-_Slide_3.png)
+
+|                       agent.py (Main Dispatcher)                      |
++---------------+---------------------------------------+---------------+
+                |                                       |
+                v                                       v
++-------------------------------+       +-------------------------------+
+|    REST API Engine            |       |    Interactions Engine        |
+|  (lib_bejson_newagent_        |       |  (lib_bejson_newagent_        |
+|      engine_rest.py)          |       |     engine_interactions.py)   |
++---------------+---------------+       +---------------+---------------+
+                |                                       |
+                +-------------------+-------------------+
+                                    |
+                                    v
++-----------------------------------------------------------------------+
+|                   Context Bubble & Memory Pipeline                    |
+|             (lib_bejson_newagent_context_bubble.py)                   |
+|   - Budget Allocator   - Knowledge Drip   - Observer Compression      |
++-----------------------------------+-----------------------------------+
+                                    |
+                                    v
++-----------------------------------------------------------------------+
+|                    Subagent & Swarm Manager                           |
+|      (subagent_admin.py & lib_bejson_newagent_subagent_*.py)          |
++-----------------------------------+-----------------------------------+
+                                    |
+                                    v
++-----------------------------------------------------------------------+
+|                   Action Execution & Tool Dispatch                    |
+|              (lib_bejson_newagent_actions.py)                         |
+|   - File System   - Ripgrep Search   - Bash Exec   - Web Scraper      |
++-----------------------------------+-----------------------------------+
+
+![NewAgent Architecture Diagram - Slide 4](images/NewAgent_System_Architecture_-_Slide_4.png)
+
+                                    |
+                                    v
++-----------------------------------------------------------------------+
+|                  BEJSON 104a & MFDB Storage Layer                     |
+|           (lib_bejson_Core_bejson_core.py & mfdb_core.py)             |
++-----------------------------------------------------------------------+
 ```
 
-![Slide 4: Action Dispatcher & Execution Flow](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_4.png)
+---
 
-### Directory Layout Architecture
+## 4. Dual Inference Engine Architecture
+
+NewAgent features a hybrid inference engine capable of switching dynamically between two distinct execution models depending on user preference and model capabilities.
+
+### 4.1 REST API Prompter & Key Cooldown Engine
+The REST engine (`lib/lib_bejson_newagent_engine_rest.py`) manages direct HTTP/REST communication across registered LLM providers:
+
+- **Automated Key Rotation**: Maintains an active registry of API keys sourced from secure environment stores (`secureenv_file.json`). Keys are selected round-robin or based on availability metrics.
+- **Provider Cooldown Tracking**: Implements per-key and per-model cooldown timers (`config/key_state.bejson`). When a provider returns HTTP 429 rate limits or quota exceptions, the key is automatically placed on cooldown and alternate keys are selected without interrupting user sessions.
+- **Model Catalog Registry**: Dynamically discovers and caches available models (`config/gemini_catalog.bejson` and `config/models.bejson`), tracking context window bounds and vision features.
+
+### 4.2 Native Tool-Calling & Interactions Engine
+The Interactions engine (`lib/lib_bejson_newagent_engine_interactions.py`) provides structured tool invocation:
+
+- **XML Tag Action Parsing**: Intercepts structured action tags embedded in model responses (e.g., `<exec>`, `<read_file>`, `<write_file>`, `<search_text>`, `<subagent_dispatch>`).
+- **Atomic Dispatch Queue**: Validates action parameters against path-guard safety rules before executing operations sequentially.
+- **Multi-Turn Feedback Loops**: Captures execution stdout, stderr, and exit codes, feeding them back into the model's conversation transcript for interactive step-by-step execution.
+
+---
+
+## 5. Multi-Provider Ecosystem & API Support
+
+![NewAgent Architecture Diagram - Slide 5](images/NewAgent_System_Architecture_-_Slide_5.png)
+
+
+NewAgent abstracts model API differences behind unified driver interfaces located in `lib_extensions/`.
+
+### 5.1 Google Gemini API Driver
+- **Module**: `lib_extensions/lib_bejson_AI_bejson_interactions.py`
+- **Capabilities**: Supports Gemini 1.5 Pro, Gemini 1.5 Flash, Gemini 2.0 Flash, and multimodal models. Implements structured JSON outputs and system prompt conditioning.
+
+### 5.2 Groq Accelerated API Driver
+- **Module**: `lib_extensions/lib_bejson_AI_bejson_groq.py`
+- **Capabilities**: Ultra-low-latency inference driver utilizing Llama 3, Mixtral, and DeepSeek models hosted on Groq LPU hardware. Ideal for fast keyword extraction and subagent evaluation tasks.
+
+### 5.3 OpenRouter Multi-Model Gateway
+- **Module**: `lib_extensions/lib_bejson_AI_bejson_openrouter.py`
+- **Capabilities**: Universal fallback gateway routing requests across open-source and proprietary models (Claude 3.5 Sonnet, GPT-4o, Qwen 2.5, DeepSeek V3/R1).
+
+### 5.4 HuggingFace Inference API Driver
+- **Module**: `lib_extensions/lib_bejson_AI_bejson_huggingface.py`
+- **Capabilities**: Direct integration with HuggingFace Serverless Inference endpoints for open models, custom domain fine-tunes, and embeddings.
+
+---
+
+## 6. Context Window & Context Bubble Management
+
+To maintain long-running agent conversations without exceeding model context limits or consuming excessive tokens, NewAgent implements the **Context Bubble System** (`lib/lib_bejson_newagent_context_bubble.py`).
+
+### 6.1 Dynamic Token Budget Allocation
+The Context Bubble calculates prompt context allocations dynamically:
+
+- **Percentage-Based Partitioning**: Total token space is split into fixed percentage budgets reserved for core system instructions, active session history, environment drips, job status, and keyword knowledge payloads.
+- **Sliding History Window**: Conversation transcripts are pruned automatically using sliding window token counting, preserving system instructions and recent turns.
+
+
+![NewAgent Architecture Diagram - Slide 6](images/NewAgent_System_Architecture_-_Slide_6.png)
+
+### 6.2 Keyword-Triggered Knowledge Pool Drip
+The system continuously monitors incoming user prompts for pre-configured keyword triggers (`config/triggers.bejson`):
+
+- **Targeted Knowledge Retrieval**: Matching keywords pull indexed knowledge blocks (`kb://...`) from `config/knowledge_pool.bejson` and inject them directly into the context bubble.
+- **Cooldown Enforcement**: Each trigger entry carries a cooldown period (e.g., 600s) to prevent repetitive injections of identical documentation across consecutive turns.
+
+### 6.3 Observer Compression & Amnesia Protocol
+When context size approaches total model limits:
+
+- **Observer Summarizer**: An observer pass distills older transcript turns into compact bulleted summaries while preserving key variables and technical decisions.
+- **Job-Scoped Amnesia**: Upon job switching or session reset, task-specific transient context is purged while fundamental system knowledge is retained.
+
+---
+
+## 7. Distributed Sub-Agent System
+
+NewAgent supports hierarchical multi-agent execution, allowing a primary agent to spawn, supervise, and communicate with specialized subagents.
+
+```
++-----------------------------------------------------------------------+
+|                            Primary Agent                              |
++-----------------------------------+-----------------------------------+
+                                    | Spawns / Supervises
+                                    v
++-----------------------------------------------------------------------+
+|                       Subagent Administrator                          |
+|             (subagent_admin.py & runtime extensions)                  |
++---------+-------------------------+-------------------------+---------+
+          |                         |                         |
+          v                         v                         v
++-------------------+     +-------------------+     +-------------------+
+
+![NewAgent Architecture Diagram - Slide 7](images/NewAgent_System_Architecture_-_Slide_7.png)
+
+|  Research Agent   |     |  Code Refactor    |     |   CMS Publisher   |
+|   (Read-Only)     |     |   (Subagent 2)    |     |   (Subagent 3)    |
++-------------------+     +-------------------+     +-------------------+
+```
+
+### 7.1 Subagent Profiles & Lifecycle Management
+- **Profile Declarations**: Managed via `lib_bejson_newagent_subagent_profiles.py`, subagents inherit specific tool access levels (e.g., read-only filesystem, full bash execution, CMS publishing).
+- **Runtime Sandboxing**: Subagent execution environments isolate context windows, session logs, and key selection to prevent state contamination of the primary agent.
+
+### 7.2 Inter-Agent Signaling & Session Resumption
+- **Signal Bus**: Subagents communicate back to the primary agent via signal files (`lib_bejson_newagent_subagent_signals.py`).
+- **Session Persistence**: Active subagent states are saved in `.104db.bejson` format (`lib_bejson_newagent_subagent_sessions.py`), allowing suspended subagents to resume seamlessly across system restarts.
+
+### 7.3 Subagent Administration CLI
+The standalone utility `subagent_admin.py` provides manual oversight:
+
+```bash
+# List all registered subagent profiles
+python3 subagent_admin.py --list-profiles
+
+# Dispatch a specific subagent with a target task
+python3 subagent_admin.py --dispatch --profile research --prompt "Audit security in lib_bejson_Core_path_guard.py"
+```
+
+---
+
+## 8. Offline Job Planning & Task Tracking (JobMaker)
+
+`JobMaker.py` provides a dedicated GUI and backend engine for pre-planning multi-step engineering workflows.
+
+- **BEJSON 104a Job Schema**: Jobs are structured datasets stored in `jobs/` containing primary goals, acceptance criteria, and ordered atomic tasks.
+
+![NewAgent Architecture Diagram - Slide 8](images/NewAgent_System_Architecture_-_Slide_8.png)
+
+- **State Preservation**: Tracks task statuses (`PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`) and preserves output context from completed steps to feed into subsequent subtasks.
+- **Integration with Main Agent**: At startup, `agent.py` scans `jobs/` via `lib_bejson_newagent_jobs.py` and allows users to trigger automated job execution via the `/jobstart` directive.
+
+---
+
+## 9. Data Layer: BEJSON 104a & MFDB Framework
+
+All persistent data within NewAgent is managed by the custom BEJSON (Binary-Equivalent JSON) 104a standard and Multi-File Database (MFDB v1.31/v1.32) orchestrator.
+
+### 9.1 Field Map Cache & Positional Integrity
+BEJSON stores data in tabular array format with explicit field header declarations. To ensure $O(1)$ attribute lookups and guard against schema drift:
+
+- **Field Map Caching**: Every record operation generates a dynamic field index mapping (`FieldMapCache`), eliminating hardcoded positional offsets.
+- **Backward Compatibility**: New fields append strictly to the end of schema declarations, guaranteeing legacy dataset readability without breaking existing code paths.
+
+### 9.2 MFDB Multi-File Database Persistence
+Complex entity networks (such as CMS content, session histories, and key registries) utilize the MFDB engine (`lib/lib_bejson_Core_mfdb_core.py`):
+
+- **Master Manifests**: Unified `104a.mfdb.bejson` manifests map entity tables, foreign keys, and write-ownership modules.
+- **Meta-Debug Audit Log**: When enabled, every write operation logs field modifications, execution times, PID, and success statuses to dedicated meta-debug entities.
+
+### 9.3 PID Locking & Resilient File IO
+- **Atomic File Writing**: File updates write to a temporary file (`.tmp`) before performing an atomic filesystem rename, preventing file corruption during power failures or Termux crashes.
+- **Path Guard Protection**: `lib_bejson_Core_bejson_path_guard.py` enforces canonical path safety, preventing directory traversal vulnerabilities.
+
+---
+
+## 10. Integrated Suite of Subsystem Tools
+
+NewAgent ships with a suite of built-in production toolkits located in `tools/`.
+
+
+![NewAgent Architecture Diagram - Slide 9](images/NewAgent_System_Architecture_-_Slide_9.png)
+
+### 10.1 NA-CMS (BEJSON-Backed CMS)
+- **Directory**: `tools/NA-CMS/`
+- **Description**: Enterprise-grade content management system running on top of BEJSON/MFDB storage. Includes automated web renderers, media handlers, draft managers, and administrative web interfaces (`NewAgent_CMS_System.py`).
+
+### 10.2 NA-WebToolkit (Headless Browser & Scraper)
+- **Directory**: `tools/NA-WebToolkit/`
+- **Description**: Complete web extraction and search engine wrapper (`Cli_Web_Toolkit.py`). Uses headless extraction (`web_extractor_core.py`) and browser automation (`browser_core.py`) to fetch web content and feed clean markdown into NewAgent context windows.
+
+### 10.3 NA-Chunker (Dataset & Archive Chunker)
+- **Directory**: `tools/NA-Chunker/`
+- **Description**: Utility (`CLI_Chunker.py`) for chunking, packaging, and mounting large project codebases and datasets into Canonical Chunked-104a BEJSON archives.
+
+### 10.4 NA-MD2HTML (Publication Compiler)
+- **Directory**: `tools/NA-MD2HTML/`
+- **Description**: Markdown to standalone editorial HTML publication builder (`MD_To_HTML.py`). Renders styled articles, technical guides, and documentation using the classic publication layout.
+
+### 10.5 NA-Init (Workspace Bootstrapper)
+- **Directory**: `tools/NA-Init/`
+- **Description**: Automated workspace setup utility (`CLI_Init.py`) that initializes directory hierarchies, validates environment variable stores, and sets up BEJSON project manifests.
+
+---
+
+## 11. Interfaces & User Experience
+
+NewAgent provides flexible user interfaces tailored for both graphical browser environments and terminal command-line operations.
+
+### 11.1 Web Terminal GUI (`webagent.py`)
+- **Framework**: Micro Flask web server serving an embedded single-page web terminal interface.
+- **Features**: Live command output streaming, quickjump navigation bars, model selection drop-downs, real-time key status monitoring, and integrated system diagnostics.
+
+### 11.2 Interactive CLI & TUI (`cliagent.py`)
+
+![NewAgent Architecture Diagram - Slide 10](images/NewAgent_System_Architecture_-_Slide_10.png)
+
+- **Framework**: Pure Python terminal interface equipped with ANSI color palettes, rich progress bars, and keyboard shortcuts.
+- **Features**: Direct prompt execution, non-interactive piping (`cat prompt.txt | python3 cliagent.py`), and job status monitoring.
+
+---
+
+## 12. Slash Commands & Directive Engine
+
+NewAgent includes an extensible slash-command parser (`lib/lib_bejson_newagent_commands.py`) allowing users to issue high-level operational directives directly in chat mode:
+
+| Slash Command | Description |
+| :--- | :--- |
+| `/goal <text>` | Defines a top-level persistent goal for long-running autonomous execution loops. |
+| `/jobstart <job>` | Instantiates and begins executing a saved JobMaker BEJSON checklist. |
+| `/plan <task>` | Instructs the agent to perform step-by-step pre-planning before making changes. |
+| `/grill-me` | Triggers interactive interview mode to clarify underspecified requirements. |
+| `/schedule <cron>` | Schedules background tasks or recurring automated checks. |
+| `/reset` | Wipes transient session context while maintaining persistent system directives. |
+| `/status` | Displays live API key cooldown states, model availability, and token budget usage. |
+
+---
+
+## 13. Environment Sourcing & Credential Security
+
+NewAgent implements a dual-store environment variable architecture to separate sensitive API credentials from user environment paths:
+
+- **Secure Credentials Store**: `/storage/emulated/0/.env/secure/secureenv_file.json` (Stores `GEMINI_KEY_*`, `GROQ_KEY_*`, `OPENROUTER_KEY_*`, `GITHUB_TOKEN`, etc.)
+- **User Non-Sensitive Paths Store**: `/storage/emulated/0/.env/user/paths.json` (Stores `INTERNAL_STORAGE`, `SD_CARD`, `ADMIN`, `PROJECT_ROOT`, etc.)
+
+Templates for initializing new environments are provided in `env_templates/`:
+- `env_templates/secureenv_file.template.json`
+- `env_templates/paths.template.json`
+
+![NewAgent Architecture Diagram - Slide 11](images/NewAgent_System_Architecture_-_Slide_11.png)
+
+
+---
+
+## 14. Directory Topology & Codebase Map
 
 ```
 NewAgent/
-├── agent.py                        # Primary interactive terminal client
-├── webagent.py                     # Flask-based web terminal interface
-├── cliagent.py                     # Headless single-turn / scripting CLI runner
-├── subagent_admin.py               # Sub-agent administration & session management CLI
-├── JobMaker.py                     # Async task & batch job deployment runner
-├── .bejson_project.json            # Canonical single-source-of-truth project manifest
-├── requirements.txt                # Dependency specifications
-├── AUDIT.md                        # Master codebase audit and remediation tracker
-│
-├── config/                         # Configuration & BEJSON knowledge registries
-│   ├── config.json                 # Primary system settings & active provider paths
-│   ├── constant_config.bejson      # Token budget & context assembly constants
-│   ├── gemini_catalog.bejson       # Registered Gemini model tiers & pricing specs
-│   ├── knowledge_pool.bejson       # Technical knowledge facts & worked schemas
-│   ├── triggers.bejson             # Keyword-to-fact triggering rules
-│   ├── keys.bejson                 # Redacted API key registry
-│   └── key_state.bejson            # Key cooldown & error count tracker
-│
-├── lib/                            # Core NewAgent runtime libraries
-│   ├── lib_bejson_Core_bejson_core.py          # Core BEJSON I/O & schema engine
-│   ├── lib_bejson_Core_bejson_validator.py     # BEJSON structural validator
-│   ├── lib_bejson_newagent_actions.py          # Action tag parser & tag execution engine
-│   ├── lib_bejson_newagent_config.py           # Configuration manager & lock helper
-│   ├── lib_bejson_newagent_context_bubble.py   # Dynamic context assembly engine
-│   ├── lib_bejson_newagent_engine_rest.py       # REST API prompter & key rotator
-│   ├── lib_bejson_newagent_engine_interactions.py # Gemini Interactions API engine
-│   ├── lib_bejson_newagent_env.py              # Secure environment resolver
-│   ├── lib_bejson_newagent_session.py          # Session logger & transcript archiver
-│   ├── lib_bejson_newagent_subagent_common.py  # Shared sub-agent lock & path helpers
-│   ├── lib_bejson_newagent_subagent_profiles.py# Sub-agent profile definitions (BEJSON 104)
-│   ├── lib_bejson_newagent_subagent_sessions.py# Sub-agent active session tables
-│   ├── lib_bejson_newagent_subagent_signals.py # Inter-agent mailbox signaling system
-│   └── lib_bejson_newagent_subagent_runtime.py # Sub-agent execution orchestrator
-│
-├── env_templates/                  # Environment bootstrap schemas
-│   ├── secureenv_file.template.json# Secret credentials schema template
-│   ├── paths.template.json         # Non-sensitive paths schema template
-│   └── README.md                   # Environment setup guide
-│
-├── tools/                          # Production tool suites
-│   ├── NA-CMS/                     # Static Site Generator & CMS Admin Application
-│   ├── NA-WebToolkit/              # Headless web scraping & content extraction tool
-│   ├── NA-Chunker/                 # Text & code chunking utility
-│   ├── NA-Init/                    # Standalone INIT context initializer
-│   └── NA-MD2HTML/                 # Markdown-to-HTML compilation engine
-│
-├── dev/                            # Active development tracking
-│   ├── change-log.md               # Maintained technical version history
-│   ├── dead_code.md                # Deprecated symbol registry
-│   ├── variable_naming_issues.md   # Structural tracking notes
-│   └── security-notes.md           # Security audit findings & remediation log
-│
-├── docs/                           # Technical documentation
-│   ├── technical_overview.md       # Function signatures & module specs
-│   └── Reports/                    # Architectural audits & deep-dive reports
-│
-├── images/                         # Architectural diagrams & slide graphics
-├── jobs/                           # Active & completed batch job definitions
-└── logs/                           # Runtime transcripts & session archives
+├── agent.py                      # Main async event loop & model orchestrator
+├── webagent.py                   # Flask Web Terminal GUI interface
+├── cliagent.py                   # Interactive CLI / TUI interface
+├── subagent_admin.py             # Subagent manager & dispatch utility
+├── JobMaker.py                   # Offline BEJSON job creation GUI & planner
+├── .bejson_project.json          # Root BEJSON 104a project manifest & changelog
+├── AUDIT.md                      # Codebase security & architectural audit log
+├── requirements.txt              # Package dependencies
+├── Context/                      # Context bubble directives & persistent policies
+│   ├── Context_Bubble.md
+│   ├── Persistent_Policy.md
+│   └── Situational_Awareness/
+├── config/                       # BEJSON configuration & state stores
+│   ├── config.json
+│   ├── constant_config.bejson
+│   ├── gemini_catalog.bejson
+│   ├── key_state.bejson
+│   ├── keys.bejson
+│   ├── knowledge_pool.bejson
+│   ├── models.bejson
+│   └── triggers.bejson
+├── dev/                          # Developer tracking & atomic job checklists
+│   ├── change-log.md
+│   ├── checklist-*.md
+
+![NewAgent Architecture Diagram - Slide 12](images/NewAgent_System_Architecture_-_Slide_12.png)
+
+│   ├── dead_code.md
+│   └── security-notes.md
+├── docs/                         # Technical documentation & architecture specs
+│   └── technical_overview.md
+├── env_templates/                # Pre-populated environment schema templates
+├── images/                       # System architecture slide diagrams (Slide 1..15)
+├── jobs/                         # Saved BEJSON 104a job checklists
+├── lib/                          # Core engine libraries (NewAgent & BEJSON Core)
+│   ├── lib_bejson_Core_bejson_core.py
+│   ├── lib_bejson_Core_mfdb_core.py
+│   ├── lib_bejson_newagent_actions.py
+│   ├── lib_bejson_newagent_context_bubble.py
+│   ├── lib_bejson_newagent_engine_interactions.py
+│   ├── lib_bejson_newagent_engine_rest.py
+│   └── lib_bejson_newagent_session.py
+├── lib_extensions/               # Multi-provider AI drivers (Gemini, Groq, HF, OpenRouter)
+├── logs/                         # Session transcripts & raw API debug logs
+├── tests/                        # Pytest suite for core engine & MFDB verification
+└── tools/                        # Integrated subsystem toolkits
+    ├── NA-CMS/                   # BEJSON Content Management System
+    ├── NA-Chunker/               # Codebase & dataset chunker tool
+    ├── NA-Init/                  # Workspace bootstrapper
+    ├── NA-MD2HTML/               # Markdown-to-HTML publication compiler
+    └── NA-WebToolkit/            # Web scraper & browser extraction toolkit
 ```
 
 ---
 
-## 💾 Persistence Engine & Data Schemas
+## 15. Verification, Audit & Quality Assurance
 
-### BEJSON 104a / 104db Positional Integrity Standard
+NewAgent undergoes automated unit and integration testing via `pytest`. The test suite covers key system behaviors including:
 
-All internal storage across NewAgent strictly adheres to the **BEJSON 104a** (single-entity document) and **BEJSON 104db** (multi-entity relational table) specifications. 
+![NewAgent Architecture Diagram - Slide 13](images/NewAgent_System_Architecture_-_Slide_13.png)
 
-![Slide 5: BEJSON 104a vs 104db Storage Rules](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_5.png)
 
-Key constraints enforced across the persistence layer:
-1. **Positional Integrity**: The order of attributes listed in the `Fields` header array must match the column order in every row within the `Values` array.
-2. **Field Map Cache Mandate**: Direct index lookups (e.g., `row[2]`) are strictly forbidden in application code. All operations resolve indices dynamically via `bejson_core_get_field_map()` or `bejson_core_get_field_index()`.
-3. **6-Value Type Vocabulary**: Fields must declare explicit lowercase types (`string`, `integer`, `number`, `boolean`, `array`, `object`). Untyped or generic designations (such as `any`) are rejected by `lib_bejson_Core_bejson_validator.py`.
+- Multi-provider REST engine key rotation and cooldown management (`tests/test_engine_rest_key_rotation.py`).
+- Ripgrep output capping and search boundary bounds (`tests/test_actions_search_text_cap.py`).
+- Resilient multiprocess PID locking (`tests/test_locking_resilient_pid.py`).
+- MFDB table validation and field map cache consistency (`tests/test_mfdb_core_write_checks.py`).
+- Subagent history budget allocations (`tests/test_subagent_history_budget.py`).
 
-#### Canonical BEJSON 104a Schema Example (`constant_config.bejson`):
-
-```json
-{
-  "Format": "BEJSON",
-  "Format_Version": "104a",
-  "Format_Creator": "Elton Boehnen",
-  "Records_Type": ["SystemConstants"],
-  "Fields": [
-    {"name": "constant_name", "type": "string"},
-    {"name": "defined_value", "type": "string"},
-    {"name": "default_value", "type": "string"},
-    {"name": "description", "type": "string"}
-  ],
-  "Values": [
-    ["max_context_tokens", "8000", "8000", "Total token budget for context assembly"],
-    ["pct_keyword_triggers", "0.2", "0.2", "Budget share allocated to keyword facts"],
-    ["chars_per_token", "4.0", "4.0", "Estimated character count per token"]
-  ]
-}
-```
-
-### MFDB Relational Database Schema
-
-For multi-entity workloads (e.g., in `NA-CMS`), NewAgent utilizes **MFDB (Multi-File Database)** structures. An MFDB database consists of a master manifest (`manifest.104a.bejson`) describing system entities, primary keys, and relative entity storage paths:
-
-```
-+-------------------------------------------------------+
-|            manifest.104a.bejson (MFDB Root)          |
-+-------------------------------------------------------+
-                           |
-            +--------------+--------------+
-            |                             |
-            v                             v
-+-----------------------+     +-----------------------+
-|  entities/posts.bejson|     |entities/authors.bejson|
-|  (Primary Key: id)    |     | (Primary Key: id)     |
-+-----------------------+     +-----------------------+
-```
-
----
-
-## 🤖 Sub-Agent Orchestration Framework
-
-### Sub-Agent Profiles & Mailbox Signaling
-
-NewAgent includes an autonomous multi-agent orchestration framework (`lib_bejson_newagent_subagent_*.py`). Sub-agents operate with isolated system prompts, custom action tag allowlists, and dedicated session tables (`.subagent_sessions.104.bejson`).
-
-![Slide 6: Sub-Agent Lifecycle & Mailbox Signaling](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_6.png)
-
-Communication between the main agent and sub-agents occurs via a lock-protected mailbox signaling engine (`.subagent_signals.104.bejson`):
-- **Signals**: `TASK_ASSIGN`, `TASK_COMPLETE`, `TASK_FAILED`, `PAUSE`, `RESUME`.
-- **Mailbox Protocol**: Sub-agents can pause turn loops using `<await_signal type="TASK_COMPLETE"/>` and automatically resume execution once the target signal is posted.
-
-```
-+------------------+       send_signal()        +----------------------+
-| Main Agent Core  | -------------------------> |  Sub-Agent Mailbox   |
-+------------------+                            +----------------------+
-         ^                                                 |
-         |              poll_signals()                     v
-         +-------------------------------------- +----------------------+
-                                                 | Sub-Agent Worker     |
-                                                 +----------------------+
-```
-
-### Sub-Agent CLI Management (`subagent_admin.py`)
-
-The `subagent_admin.py` utility allows system operators to inspect, create, and dispatch sub-agents directly from the command line:
-
+Run the complete test suite:
 ```bash
-# List all registered sub-agent profiles
-python3 subagent_admin.py profiles list
-
-# Create a new specialized researcher sub-agent profile
-python3 subagent_admin.py profiles create researcher \
-  --description "Codebase & Web Researcher" \
-  --actions "read_file,list_dir,search_web,run_command" \
-  --system-prompt "You are a read-only research assistant."
-
-# Dispatch a sub-agent task session
-python3 subagent_admin.py dispatch researcher "Analyze lib/ directory for memory leaks"
-
-# Inspect active sub-agent sessions and mailbox signals
-python3 subagent_admin.py sessions list
-python3 subagent_admin.py signals list
+pytest tests/
 ```
 
 ---
 
-## ⚙️ Installation & Setup
+## 16. Operations & Deployment Guide
 
 ### Prerequisites
-- **Python**: Version **3.10** or higher.
-- **Operating System**: Linux, Termux (Android), macOS, or Windows (WSL recommended).
-- **Core Dependencies**: Installed via `requirements.txt`.
+- Python 3.10+ runtime environment.
+- Linux / Termux or macOS host filesystem.
+- Git & GitHub CLI (`gh`) configured with appropriate credentials.
 
-### Quick Start
+### Installation & Launch Steps
 
-1. **Clone the Repository**:
-   ```bash
-   git clone https://github.com/boehnenelton/NewAgent.git
-   cd NewAgent
-   ```
-
-2. **Install Required Packages**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-3. **Initialize Configuration**:
-   Verify configuration templates and populate local environment credentials:
-   ```bash
-   python3 cliagent.py --version
-   ```
-
-### Environment Sourcing Setup
-
-NewAgent sources API credentials and system paths dynamically using a two-tier configuration model:
-1. **Secure Credentials**: `/storage/emulated/0/.env/secure/secureenv_file.json` (Contains `GEMINI_KEY_1..25`, `GROQ_KEY_*`, `OPENROUTER_KEY_*`).
-2. **User Non-Sensitive Paths**: `/storage/emulated/0/.env/user/paths.json` (Contains `INTERNAL_STORAGE`, `SD_CARD`, `PROJECT_ROOT`, `ADMIN`).
-
-![Slide 10: Environment Sourcing Hierarchy](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_10.png)
-
-> [!NOTE]
-> If the new split environment paths are absent, NewAgent safely falls back to legacy `env_file.json` sourcing without interrupting startup. Blank schema templates are provided in `env_templates/`.
-
----
-
-## 🚀 Usage & Execution Interfaces
-
-### Interactive CLI Agent (`agent.py`)
-
-Launch the primary interactive CLI agent featuring real-time colored logging, turn history, and action tag execution:
-
+1. Clone the repository:
 ```bash
-python3 agent.py
+git clone git@github.com:boehnenelton/NewAgent.git
+cd NewAgent
 ```
 
-- **Interactive Slash Commands**:
-  - `/help`: Display operational command menu.
-  - `/clear`: Reset current turn history buffer.
-  - `/logs2md`: Export active session transcript to timestamped Markdown and ZIP archive.
-  - `/model`: View and switch active Gemini catalog tiers.
-  - `/budget`: Inspect token consumption and context bubble allocation.
-
-![Slide 9: Hierarchical Context Inheritance](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_9.png)
-
-### Web Terminal UI (`webagent.py`)
-
-Launch the responsive web terminal server:
-
+2. Install dependencies:
 ```bash
-python3 webagent.py --port 5000
+
+![NewAgent Architecture Diagram - Slide 14](images/NewAgent_System_Architecture_-_Slide_14.png)
+
+pip install -r requirements.txt
 ```
 
-- Access the web interface at `http://127.0.0.1:5000`.
-- **Authentication**: On first run, `webagent.py` generates a secure access token saved to `config/config.json` (`web_auth_token`). Pass this token via the `X-Auth-Token` header or `?token=` query parameter.
-
-![Slide 11: Web Terminal & Token Authentication](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_11.png)
-
-### Headless Scripting Client (`cliagent.py`)
-
-Run single-turn prompt tasks or automated pipeline scripts non-interactively:
-
+3. Configure environment variables using templates:
 ```bash
-# Execute a single prompt and print output
-python3 cliagent.py "Audit lib/lib_bejson_newagent_actions.py for path safety"
-
-# Execute prompt with JSON output formatting
-python3 cliagent.py --execute "list_dir Cwd" --json
+cp env_templates/secureenv_file.template.json /storage/emulated/0/.env/secure/secureenv_file.json
+cp env_templates/paths.template.json /storage/emulated/0/.env/user/paths.json
 ```
 
----
-
-## 🛡️ Security & System Hardening
-
-NewAgent incorporates comprehensive security guardrails designed to prevent unauthorized code execution, key leakage, and path traversal vulnerabilities:
-
-![Slide 7: Security Boundaries & Hardening Layers](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_7.png)
-
-### Authentication & Access Control
-- **Web Terminal Guard**: `webagent.py` and `JobMaker.py` enforce `X-Auth-Token` authentication with constant-time string comparisons (`hmac.compare_digest`) on all HTTP endpoints.
-- **Loopback Binding Default**: Web servers bind to `127.0.0.1` by default to prevent unintended LAN exposure.
-
-### Path Traversal & Execution Safeguards
-- **Sub-String Execution Denylist**: Command execution (`do_exec`) checks shell input against an explicit denylist (`rm -rf /`, `mkfs`, `dd`, `chmod 777`) using substring-anywhere matching rather than bypassable prefix checks.
-- **Path Containment (`bejson_safe_join`)**: File I/O operations enforce directory boundary checks to prevent `../` directory breakout attacks.
-
-### Environment Credential Isolation
-- **API Key Masking**: Raw API key values (`GEMINI_KEY_*`) are loaded exclusively into memory and masked in terminal output and transcript logs (`REDACTED_KEY_PLACEHOLDER`).
-
-![Slide 8: Key Failover & Cooldown Pipeline](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_8.png)
+4. Launch NewAgent:
+- **CLI Interactive Mode**:
+  ```bash
+  python3 cliagent.py
+  ```
+- **Web Terminal GUI**:
+  ```bash
+  python3 webagent.py
+  ```
+- **Subagent Administration**:
+  ```bash
+  python3 subagent_admin.py --list-profiles
+  ```
 
 ---
 
-## 🧰 Included Tool Suites
+## 17. Author & Maintainer Crediting
 
-### NA-CMS (Content Management System)
-Located in `tools/NA-CMS/`, **NA-CMS** is a standalone, BEJSON-backed static site generator and management application.
-- **Features**: Dynamic theme engine, asset optimization pipeline, automated breadcrumb generation, and HTML sanitization.
-- **Execution**: Run via `python3 tools/NA-CMS/Admin.py`.
+**Author & Creator**: Elton Boehnen  
+**Email**: boehnenelton2024@gmail.com / eltonboehnen@gmail.com  
+**Website**: [boehnenelton2024.pages.dev](https://boehnenelton2024.pages.dev)  
+**GitHub**: [github.com/boehnenelton](https://github.com/boehnenelton)  
 
-![Slide 12: NA-CMS Integrated Architecture](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_12.png)
+![NewAgent Architecture Diagram - Slide 15](images/NewAgent_System_Architecture_-_Slide_15.png)
 
-### NA-WebToolkit & NA-Chunker
-- **NA-WebToolkit** (`tools/NA-WebToolkit/`): High-speed, headless scraping engine supporting HTML extraction, markdown conversion, and media downloading using list-form subprocess calls.
-
-![Slide 13: NA-WebToolkit Execution Flow](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_13.png)
-
-- **NA-Chunker** (`tools/NA-Chunker/`): Codebase parsing tool that breaks large Python and JavaScript codebases into token-bounded chunks for LLM consumption.
 
 ---
-
-## 🐛 Known Issues & Audit Roadmap
-
-Per the latest security and architecture audit (`AUDIT.md` & `dev/security-notes.md`), the following items are tracked for future iterations:
-
-![Slide 14: Session Archival & Logging Pipeline](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_14.png)
-
-- [x] **Remediated**: Lock-protected `web_auth_token` generation preventing race conditions during concurrent server boot (PKG110).
-- [x] **Remediated**: Strict BEJSON field type validation rejecting non-standard types like `any` (PKG104).
-- [x] **Remediated**: Sub-agent signal mailbox implementation and action tag filtering (PKG112).
-
-![Slide 15: Sub-Agent Profile Security Matrix](file:///storage/emulated/0/Admin/repos/New/NewAgent/images/NewAgent_System_Architecture_-_Slide_15.png)
-
-- [ ] **Roadmap Item 1**: Implement automatic mtime-based caching for context bubble policy reads (`context_bubble.assemble_bubble`).
-- [ ] **Roadmap Item 2**: Replace fixed-delay network retries in `engine_rest.py` with exponential backoff and randomized jitter.
-- [ ] **Roadmap Item 3**: Standardize all sub-agent file lock routines to use `ResilientPIDLock`.
-
----
-
-## 🤝 Contributing
-
-Contributions must adhere to the core project policy rules:
-1. **Positional Integrity**: Maintain strict alignment between `Fields` and `Values` across all BEJSON operations. Always use field map caching (`bejson_core_get_field_map`).
-2. **Header Annotations**: All modified files must maintain single-source `VERSION` variables and updated header annotations (`RELATIONAL_ID`, `Release_Version = 300`).
-3. **No Unversioned Deliverables**: Every project update must increment `Project_Version` and `Package_Version` in `.bejson_project.json`.
-
----
-
-## 📄 License & Author Credits
-
-**NewAgent** is authored and maintained by **Elton Boehnen**. Licensed under the **PolyForm Noncommercial License 1.0.0**.
-
-- **Author**: Elton Boehnen
-- **Email**: [boehnenelton2024@gmail.com](mailto:boehnenelton2024@gmail.com)
-- **Website**: [boehnenelton2024.pages.dev](https://boehnenelton2024.pages.dev)
-- **GitHub**: [github.com/boehnenelton](https://github.com/boehnenelton)
-
----
-*Copyright © 2026 Elton Boehnen. All rights reserved.*
+*Built with precision for high-performance autonomous agent orchestration and BEJSON multi-file storage architecture.*

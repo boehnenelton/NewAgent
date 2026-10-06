@@ -1,16 +1,16 @@
-# Runtime artifacts - not committed
-logs/
-backups/
-__pycache__/
-*.pyc
-*.pyo
-.DS_Store
-
-# Sensitive config - keys managed locally
+# Environment and configuration secrets
 config/keys.bejson
-config/secureenv_file*
+config/key_state.bejson
+config/session_resume.json
+*.key
 
-# Empty placeholder dirs tracked via .gitkeep
+# Session logs and transcript archives (all formats)
+logs/
+logs/*
+dev/
 
-# Bookwriter secrets
-tools/bookwriter/secure/
+# Local archives and chunked exports
+NewAgent.zip
+chunked5/
+backups/
+Context/Context_Bubble.md
