@@ -1,0 +1,34 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "ScriptConfig"
+  ],
+  "Fields": [
+    {
+      "name": "setting_name",
+      "type": "string"
+    },
+    {
+      "name": "setting_value",
+      "type": "string"
+    },
+    {
+      "name": "description",
+      "type": "string"
+    }
+  ],
+  "Values": [
+    [
+      "admin_port",
+      "5001",
+      "Port for NewAgent_CMS_Admin.py (main admin dashboard)."
+    ],
+    [
+      "publisher_port",
+      "5001",
+      "Port for NewAgent_CMS_Publisher.py. Same default as admin_port -- the advanced launcher auto-bumps this by +10 if both are started at once, to avoid a collision."
+    ]
+  ]
+}

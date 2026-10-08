@@ -1,0 +1,28 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Schema_Name": "GeminiModelRegistry",
+  "Records_Type": ["GeminiModel"],
+  "Fields": [
+    {"name": "model_name", "type": "string"},
+    {"name": "model_id", "type": "string"},
+    {"name": "currently_active", "type": "boolean"},
+    {"name": "thinking_enabled", "type": "boolean"},
+    {"name": "google_search_enabled", "type": "boolean"}
+  ],
+  "Values": [
+    ["Gemini 3.6 Flash", "gemini-3.6-flash", true, true, true],
+    ["Gemini 3.5 Flash", "gemini-3.5-flash", false, false, true],
+    ["Gemini 3.1 Pro (Preview)", "gemini-3.1-pro-preview", false, true, true],
+    ["Gemini 3.1 Flash-Lite", "gemini-3.1-flash-lite", false, false, false],
+    ["Gemini 3 Pro Image", "gemini-3-pro-image", false, false, false],
+    ["Gemini 3.1 Flash Image", "gemini-3.1-flash-image", false, false, false],
+    ["Gemini 3.1 Flash-Lite Image", "gemini-3.1-flash-lite-image", false, false, false],
+    ["Gemini 3.1 Flash TTS (Preview)", "gemini-3.1-flash-tts-preview", false, false, false],
+    ["Gemini 3.1 Flash Live (Preview)", "gemini-3.1-flash-live-preview", false, false, true],
+    ["Gemma 4 31B IT", "gemma-4-31b-it", false, false, false],
+    ["Gemma 4 26B MoE IT", "gemma-4-26b-a4b-it", false, false, false],
+    ["Gemini 2.5 Flash", "gemini-2.5-flash", false, false, false]
+  ]
+}

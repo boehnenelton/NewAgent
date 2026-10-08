@@ -1,0 +1,1 @@
+I have renamed some of the tools in tools going forward any tools found in the tools folder is an official form of its original project and is now a part of the new agent system itself so do not separate it or package it separately is a part of the CMS treat it like a part of the same as if I tell you to update it you're just updating part of the CMS.

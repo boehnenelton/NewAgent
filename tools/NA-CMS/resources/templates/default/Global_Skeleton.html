@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{page_title}} | {{site_title}}</title>
+    <meta name="description" content="{{seo_description}}">
+    <meta name="author" content="{{seo_author}}">
+    <meta property="og:title" content="{{page_title}}">
+    <meta property="og:description" content="{{seo_description}}">
+    <meta property="og:image" content="{{seo_image}}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{current_url}}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Source+Code+Pro&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{rel_prefix}}style.css">
+</head>
+<body>
+    <!-- BEHTML: Y[00..01], header is 2*Ry (Master Spec SS5.1: black is the
+         structural anchor for toolbars/headers). -->
+    <header class="site-header behtml-grid__row behtml-grid__row--2r" data-behtml-y="0..1" data-behtml-x="0..7">
+        <div class="container">
+            <div class="nav-wrap">
+                <a href="{{rel_prefix}}index.html" class="logo">{{site_title}}</a>
+                <nav>
+                    <ul class="nav-menu" id="main-nav">
+                        <li><a href="{{rel_prefix}}index.html">Home</a></li>
+                        <li class="nav-dropdown">
+                            <a href="#">Categories <span class="chevron">&#9660;</span></a>
+                            <ul class="dropdown-content">
+                                {{sidebar_categories}}
+                            </ul>
+                        </li>
+                        <li><a href="{{rel_prefix}}apps/index.html">Applications</a></li>
+                        {{custom_nav_links}}
+                    </ul>
+                </nav>
+                <button class="mobile-menu-toggle" onclick="toggleMenu()">&#9776;</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- BEHTML: X-axis octal split -- main-content = X0..X5 (75%),
+         sidebar = X6..X7 (25%). Rules Reference SS4 percentage table,
+         applied at page scale rather than per-row. -->
+    <div class="behtml-grid__row main-layout" data-behtml-x="0..7">
+        <main class="main-content behtml-grid__cell behtml-grid__cell--w-75" data-x-span="0..5">
+            {{main_content_injection}}
+        </main>
+        <aside class="sidebar behtml-grid__cell behtml-grid__cell--w-25" data-x-span="6..7">
+            <div class="sidebar-collapsible active" id="collapse-explore">
+                <button class="collapse-trigger" onclick="toggleCollapse('collapse-explore')">
+                    Explore <span class="chevron">&#9660;</span>
+                </button>
+                <div class="collapse-content">
+                    <ul class="category-list">
+                        {{sidebar_categories}}
+                    </ul>
+                </div>
+            </div>
+
+            <div class="sidebar-collapsible" id="collapse-social">
+                <button class="collapse-trigger" onclick="toggleCollapse('collapse-social')">
+                    Connect <span class="chevron">&#9660;</span>
+                </button>
+                <div class="collapse-content" style="padding: 20px;">
+                    <div class="social-links-sidebar">
+                        {{social_media_links}}
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- BEHTML: footer is 3*Ry (96px) -- the exact "3-row block" callback
+         from the BEHTML-Example-Starter.html reference page. -->
+    <footer class="site-footer behtml-grid__row behtml-grid__row--3r" data-behtml-y="0..2" data-behtml-x="0..7">
+        <div class="container">
+            <div class="footer-content">
+                <div class="copyright">&copy; {{current_year}} <strong>{{site_title}}</strong></div>
+                <div class="footer-links" style="display:flex; gap:20px;">
+                    <a href="{{rel_prefix}}index.html">Home</a>
+                    <a href="{{rel_prefix}}apps/index.html">Apps</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+    <div id="lightbox" class="lightbox">
+        <span class="lightbox-close">&times;</span>
+        <img class="lightbox-content" id="lightbox-img">
+    </div>
+    <script>
+        function toggleMenu() {
+            const nav = document.getElementById('main-nav');
+            nav.classList.toggle('active');
+        }
+
+        function toggleCollapse(id) {
+            const el = document.getElementById(id);
+            el.classList.toggle('active');
+        }
+
+        const lightbox = document.getElementById('lightbox');
+        const lightboxImg = document.getElementById('lightbox-img');
+        const closeBtn = document.querySelector('.lightbox-close');
+        document.querySelectorAll('.article-body img, .article-featured-image, .card-img').forEach(img => {
+            img.onclick = function(){
+                lightbox.style.display = "flex";
+                lightboxImg.src = this.src;
+            }
+        });
+        closeBtn.onclick = function() { lightbox.style.display = "none"; }
+        lightbox.onclick = function(e) { if(e.target !== lightboxImg) lightbox.style.display = "none"; }
+
+        // BEHTML Anti-Drift Auditor (Master Spec SS6.3 / Consolidated
+        // Reference Appendix C reference implementation). Silent by
+        // default on a public site -- append ?behtml_debug=1 to any URL
+        // to run it and print results to the console instead of leaving
+        // visitors staring at a debug log.
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('behtml_debug') !== '1') return;
+            const RY = 32;
+            const TOLERANCE_EPSILON = 0.5;
+            function runAuditor() {
+                const rows = document.querySelectorAll('[data-behtml-y]');
+                let violations = 0;
+                rows.forEach(row => {
+                    const physicalHeight = row.getBoundingClientRect().height;
+                    const k = Math.round(physicalHeight / RY);
+                    const expectedHeight = k * RY;
+                    const delta = Math.abs(physicalHeight - expectedHeight);
+                    const label = row.dataset.behtmlY;
+                    if (delta > TOLERANCE_EPSILON) {
+                        violations++;
+                        console.warn(`E_BEHTML_Y_DRIFT Y[${label}] expected ${expectedHeight}px, got ${physicalHeight.toFixed(2)}px`);
+                    }
+                });
+                console.log(violations === 0
+                    ? 'BEHTML MATRIX STATUS: 100% quantized, zero drift.'
+                    : `BEHTML MATRIX STATUS: ${violations} violation(s) detected.`);
+            }
+            window.addEventListener('load', runAuditor);
+            window.addEventListener('resize', runAuditor);
+        })();
+    </script>
+</body>
+</html>

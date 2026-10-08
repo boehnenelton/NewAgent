@@ -1,0 +1,225 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Schema_Name": "GlobalEnv",
+  "Records_Type": [
+    "EnvironmentVariable"
+  ],
+  "Fields": [
+    {
+      "name": "var_name",
+      "type": "string",
+      "description": "The name of the environment variable"
+    },
+    {
+      "name": "var_value",
+      "type": "string",
+      "description": "The literal value of the variable"
+    },
+    {
+      "name": "var_type",
+      "type": "string",
+      "description": "The data type: string, int, boolean, or secret"
+    },
+    {
+      "name": "Flag",
+      "type": "string"
+    },
+    {
+      "name": "Description",
+      "type": "string"
+    }
+  ],
+  "Values": [
+    [
+      "INTERNAL_STORAGE",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "SD_CARD",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "PROJECT_ROOT",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "SCRIPT_DATA",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "PROJECT_INDEX_ROOT",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_LIBRARIES",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_RESOURCES",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_TOOLS",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_DEV",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_DATA",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_CONTROL",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_KNOWLEDGE_BASES",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_SCHEMAS",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_TEMPLATES",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_COMPILED_CORE",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_REPORTS",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_OSINT",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_REGISTRY",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_ARCHIVES",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_FLAGSHIPS",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_POLICY",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_SKILLS",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_DOCUMENTS",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_ASSETS",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_PLANNING",
+      "",
+      "string",
+      null,
+      null
+    ],
+    [
+      "ADMIN_LIBRARIES_105",
+      "",
+      "string",
+      null,
+      null
+    ]
+  ]
+}

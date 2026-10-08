@@ -5,18 +5,155 @@ Description:    REST API prompter with rotating key and cooldown registry.
                 Key/model/cooldown registries routed through the canonical
                 Core BEJSON library (atomic write + validation + field-map
                 access) instead of hand-rolled json.load/dump.
-Version:        1.15.0
-Date:           2026-08-05
+Version:        1.17.1
+Date:           2026-09-29
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  9aac21e8-2785-404b-9ea4-75aa16d3970c
+RELATIONAL_ID:  a4f0c3e8-9b26-4c15-8d7a-2e5f1b9c8036
+
+CHANGELOG:
+- 1.17.1 (2026-09-29): Remediation pass, audit finding #10 (Cosmetic --
+  positional indexing against an in-memory literal). The audit itself
+  scored this LOW/cosmetic and only recommended fixing it "next time this
+  file is touched for other reasons" -- it was, repeatedly, in 1.17.0.
+  `known_profiles = {row[1]: row[6] for row in DEFAULT_MODEL_CATALOG}`
+  now builds a name->index map from the existing _CATALOG_FIELDS schema
+  (already defined 3 lines from DEFAULT_MODEL_CATALOG's own declaration)
+  instead of bare literals 1/6. Verified: standalone check confirms
+  gemini-3.5-flash-lite -> 'v3' and qwen3.6-35b -> 'legacy' still resolve
+  correctly; py_compile clean.
+- 1.17.0 (2026-09-18): Remediation pass -- CRITICAL fix, Elton's live
+  report of keys "shooting out like a thousand a second" and getting
+  rate-limited. Root cause confirmed against his real config/key_state.
+  bejson (17 keys all landed on cooldown within a 44-second window):
+  KeyRegistry.next_key(), when EVERY key was simultaneously on cooldown,
+  fell through to returning the soonest-to-expire key IMMEDIATELY -- still
+  on cooldown, guaranteed to fail. prompt()'s retry loop fired it with
+  zero delay (the 429 branch never slept at all), so the loop hammered
+  doomed requests back-to-back with no pacing, AND each hit incremented
+  that key's fail_count, risking auto-deactivating perfectly healthy keys
+  (AUTO_DEACTIVATE_THRESHOLD=3) purely for being least-bad during an
+  all-keys-cooldown window. next_key() now waits for the soonest key's
+  actual cooldown (capped at new NEXT_KEY_MAX_WAIT=30s) and only returns
+  a key once it's genuinely available, or None if the wait would exceed
+  the cap -- never fires a doomed request blind. prompt()'s "No API keys
+  available" RuntimeError (misleading during a rate-limit episode, sent
+  Elton chasing a config/env-sync bug for this before) now distinguishes
+  "not configured" from "all cooling down, waited, still not ready".
+  Also folds in audit finding #6 (fixed retry delay, not exponential
+  backoff+jitter): new _backoff_delay() (full-jitter exponential, base
+  NETWORK_ERROR_RETRY_DELAY=2s, capped NETWORK_ERROR_RETRY_MAX_DELAY=30s)
+  replaces the flat 2s sleep on network-level failures. engine_interactions.
+  py 's parallel next_key() call site (shares this same KeyRegistry) gets
+  the same clearer error-message split. Verified: 3 standalone behavioral
+  tests against the extracted next_key() logic -- short cooldown (waits
+  the actual remaining time, returns the key), cooldown beyond the cap
+  (returns None promptly, does not block ~999s), and a healthy key
+  present (returns it immediately, zero wait, normal round-robin
+  unaffected) -- all pass; py_compile clean on both touched files.
+- 1.16.5 (2026-08-20): Audit follow-up on Elton's 1.16.4 fix (below).
+  Regression-tested it directly: reproduced the exact multi-source scenario
+  (secure file with 21 real keys + paths file with 0 GEMINI_KEY_* rows,
+  matching Elton's actual device) and confirmed all 21 keys now survive.
+  Also found and fixed a secondary issue while testing: total_added counts
+  NEWLY added keys, not total active keys, so a fully-idempotent re-run
+  (every key already synced, nothing new to add) still tripped the "Synced
+  0 keys" alarm even though nothing was actually wrong -- misleading, not
+  a correctness bug, but exactly the kind of noise that makes a real
+  failure harder to spot. sync_keys_from_env_sources() now checks
+  keys.bejson's actual current active-key count for key_prefix before
+  firing the alarm; only fires when there are genuinely zero active keys
+  for that prefix, not just zero newly-added ones this run. Verified: the
+  original multi-source regression test still passes 21/21 after this
+  change; a second idempotent call to sync_keys_from_env_sources no longer
+  fires the alarm; a genuine zero-active-keys failure still fires it
+  correctly; a real single-key revocation (removed from a non-empty
+  source) still correctly drops the active count by exactly one.
+- 1.16.4 (2026-08-20): Elton found and fixed the actual root cause of the
+  whole env-sync-0-keys saga himself, in config/session audit work he did
+  directly on his device: sync_keys_from_env_sources() (1.16.0, pkg073)
+  calls sync_keys_from_env_file() once per resolved source in a loop. Each
+  call's deactivate/reactivate pass (present since 2026-07-23, well before
+  any of this migration work) used to be gated behind an early return on
+  empty candidate_rows -- but that early return was removed in 1.16.3
+  specifically so the new diagnostics param could report "0 matching rows"
+  for that source. Removing it meant a source with ZERO matching
+  GEMINI_KEY_* rows (Elton's real paths.json) now fell through into the
+  deactivate loop and deactivated every key added by an EARLIER source in
+  the same sync_keys_from_env_sources call (his real secureenv_file.json,
+  with 21 genuine keys) -- because from that second source's narrow view,
+  none of those 21 keys' values were present in ITS candidate list, so
+  they looked revoked. Fix: wrapped the deactivate/reactivate block in
+  `if candidate_rows:` so a source contributing zero candidates can never
+  affect keys that came from a different source. This means the actual
+  0-keys failure Elton was chasing across pkg075/081/082/084/085 was, by
+  the time of 1.16.3, a regression I introduced myself while trying to
+  improve the diagnostics for an EARLIER, different cause of the same
+  symptom -- worth being direct about rather than glossing over.
+- 1.16.3 (2026-08-20): Comparing Elton's PKG70 (worked -- old single
+  env_file_path scheme) against his live PKG84 device state pinned the
+  break to the migration window, and his live session log
+  (session_2026-08-20_02-09-05) showed exactly why the pkg075/082
+  diagnostics weren't enough: exists=True on BOTH resolved files, yet
+  total_added still came back 0 -- proving a file existing isn't the same
+  as it actually producing keys once opened, and the real per-file reason
+  was only ever going to logger.warning() (stderr), never the session
+  transcript. sync_keys_from_env_file() gained an optional diagnostics
+  list param -- every "returning 0 for a substantive reason" branch
+  (env_file not found, failed to load/parse, failed validate_bejson, or
+  loaded+valid but zero rows actually match key_prefix with a non-empty
+  value) now appends a plain-language explanation instead of only logging
+  it. sync_keys_from_env_sources() now returns (total_added, detail)
+  instead of a bare int -- checked all 3 call sites first and confirmed
+  none of them captured the return value, so this doesn't break anything
+  despite the prior version's docstring promising contract stability;
+  agent.py now captures detail and logs it straight into the session
+  transcript instead of recomputing only describe_env_sources() (which
+  can't see per-file failure reasons at all). webagent.py/cliagent.py
+  updated to the new 2-tuple return (neither has a SessionLogger to log
+  detail into, so no further change needed there). Verified 4 scenarios
+  end-to-end: nothing exists at all, exists+valid+zero-matching-rows
+  (Elton's most likely actual case, given PKG70's old env_file.json
+  demonstrably HAD real key values and the new split files may simply
+  never have had them copied over), malformed JSON, and a real successful
+  sync -- all report the correct specific reason, and a full
+  SessionLogger round-trip confirms the exact per-file reason now lands in
+  the transcript content, not just stderr.
+- 1.16.2 (2026-08-19): The pkg075 WARNING-log diagnostic proved
+  insufficient on Elton's actual device -- the failure recurred on pkg081,
+  and his uploaded session_2026-08-18_15-21-53.md confirmed 0 keys / env:0
+  again, but the diagnostic itself was nowhere in that file, because
+  logger.warning() only ever reaches stderr, and he shares session .md
+  files with me, not terminal scrollback. Added a plain print() alongside
+  the existing logger.warning() as immediate belt-and-suspenders console
+  visibility. The real fix is in agent.py -- see its own changelog -- which
+  now bakes this same diagnostic into the session transcript itself once
+  the logger exists, so it survives into the actual artifact that gets
+  shared, not just whichever terminal happened to be watching at boot.
+- 1.16.1 (2026-08-16): sync_keys_from_env_sources() now logs a WARNING
+  via lib_bejson_newagent_env.describe_env_sources(config) whenever a sync
+  run adds 0 keys, instead of failing silently and only surfacing as a
+  generic "No API keys available for provider 'gemini'" several turns
+  later when the key registry is actually used. Response to Elton's report
+  of exactly that failure mode on a live device post-migration.
+- 1.16.0 (2026-08-16): Added sync_keys_from_env_sources() -- thin wrapper
+  that resolves the new split env_secure_file_path/env_paths_file_path
+  (falling back to legacy env_file_path only if neither exists, via
+  lib_bejson_newagent_env.resolve_env_bejson_sources) and calls the
+  existing sync_keys_from_env_file() once per resolved source, summing
+  added counts. sync_keys_from_env_file() itself is untouched -- still
+  single-file, still the same dedupe/deactivate/reactivate contract --
+  callers (webagent.py, agent.py, cliagent.py) now call the new wrapper
+  with config instead of passing one hardcoded path.
 """
 
 import json
 import logging
+import random
 import time
 import subprocess
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -28,14 +165,30 @@ from lib_bejson_Core_bejson_core import (
 )
 from lib_bejson_Core_bejson_validator import validate_bejson
 import lib_bejson_newagent_errors as errors
+import lib_bejson_newagent_env as newagent_env
 
-VERSION = "1.15.0"
+VERSION = "1.17.1"
 logger = logging.getLogger(__name__)
 
 COOLDOWN_429 = 60
 COOLDOWN_AUTH = 86400
 COOLDOWN_TRANSIENT = 15  # server-side 500/502/503/504 -- brief, not key-specific, resolves fast usually
-NETWORK_ERROR_RETRY_DELAY = 2  # seconds -- brief pause before retrying after a DNS/timeout/connectivity failure
+NETWORK_ERROR_RETRY_DELAY = 2  # seconds -- base for exponential backoff, see _backoff_delay()
+NETWORK_ERROR_RETRY_MAX_DELAY = 30  # seconds -- backoff ceiling
+NEXT_KEY_MAX_WAIT = 30  # seconds -- see KeyRegistry.next_key()
+
+
+def _backoff_delay(attempt: int, base: float = NETWORK_ERROR_RETRY_DELAY,
+                    max_delay: float = NETWORK_ERROR_RETRY_MAX_DELAY) -> float:
+    """Exponential backoff with full jitter (audit finding #6 -- the
+    network-error retry delay was a fixed NETWORK_ERROR_RETRY_DELAY
+    regardless of attempt number, which under a sustained outage means
+    every concurrent caller retries in lockstep at the same fixed
+    cadence, a classic thundering-herd pattern. random.uniform(0, cap)
+    is the standard 'full jitter' shape (AWS architecture blog's
+    recommended default over fixed or equal-jitter backoff)."""
+    cap = min(max_delay, base * (2 ** attempt))
+    return random.uniform(0, cap)
 
 _KEY_FIELDS = [
     {"name": "api_key", "type": "string"},
@@ -385,6 +538,29 @@ class KeyRegistry:
         return time.time() >= until
 
     def next_key(self) -> Optional[str]:
+        """Round-robins to the next available (not-on-cooldown) key.
+
+        FIX (Remediation pkg, critical): previously, when EVERY key was
+        simultaneously on cooldown, this fell through to `best = min(...,
+        key=unavailable_until)` and returned that key IMMEDIATELY -- still
+        on cooldown, guaranteed to fail again. The caller (prompt()) fired
+        the request with zero delay, and the 429 branch had no sleep at
+        all, so the retry loop hammered doomed requests back-to-back with
+        no pacing whatsoever -- exactly the "shooting out like a thousand
+        a second" behavior reported, and each hit also incremented that
+        key's fail_count, so a perfectly healthy key could get permanently
+        auto-deactivated (AUTO_DEACTIVATE_THRESHOLD=3) purely for being the
+        least-bad pick during a window where every key was cooling down.
+        Confirmed in the wild: config/key_state.bejson showed 17 keys all
+        landing on cooldown within a 44-second window.
+
+        Now: if no key is immediately available, waits for the
+        soonest-to-expire key's actual cooldown, capped at
+        NEXT_KEY_MAX_WAIT seconds. If that key becomes available within
+        the cap, returns it (now genuinely ready). If the wait would
+        exceed the cap, returns None instead of firing a doomed request --
+        the caller treats None as "not ready", not "misconfigured".
+        """
         if not self.keys:
             return None
         for _ in range(len(self.keys)):
@@ -392,9 +568,27 @@ class KeyRegistry:
             self._index = (self._index + 1) % len(self.keys)
             if self._is_available(key):
                 return key
+
         best = min(self.keys, key=lambda k: self._cooldowns.get(k, 0.0))
         self._index = (self.keys.index(best) + 1) % len(self.keys)
-        return best
+        wait = self._cooldowns.get(best, 0.0) - time.time()
+        if wait <= 0:
+            return best  # expired between the scan above and here
+        if wait > NEXT_KEY_MAX_WAIT:
+            logger.warning(
+                "[KeyRegistry] All %d key(s) on cooldown; soonest ready in "
+                "%.1fs, past the %ds wait cap -- returning no key rather "
+                "than firing a doomed request.",
+                len(self.keys), wait, NEXT_KEY_MAX_WAIT,
+            )
+            return None
+        logger.warning(
+            "[KeyRegistry] All %d key(s) on cooldown; waiting %.1fs for "
+            "...%s to become available instead of firing a doomed request.",
+            len(self.keys), wait, best[-6:],
+        )
+        time.sleep(wait)
+        return best if self._is_available(best) else None
 
     @property
     def active_slot(self) -> int:
@@ -684,7 +878,19 @@ class RestPrompter:
             if adapter["requires_auth"]:
                 key = key_registry.next_key()
                 if not key:
-                    raise RuntimeError(f"No API keys available for provider '{provider}'.")
+                    # FIX (Remediation pkg): next_key() now distinguishes
+                    # "no keys configured at all" from "keys exist but are
+                    # all cooling down past the wait cap" -- the old
+                    # message ("No API keys available") was misleading in
+                    # the second, far more common case and sent Elton
+                    # chasing a config/env-sync bug for a rate-limit
+                    # situation instead.
+                    if not key_registry.keys:
+                        raise RuntimeError(f"No API keys configured for provider '{provider}'.")
+                    raise RuntimeError(
+                        f"All API keys for provider '{provider}' are rate-limited/cooling down "
+                        f"(waited up to {NEXT_KEY_MAX_WAIT}s for the soonest one; still not ready)."
+                    )
 
             _, _, url, headers, payload = self._build_request(key, history, system_instruction)
             body = json.dumps(payload).encode("utf-8")
@@ -764,7 +970,7 @@ class RestPrompter:
                 last_error = str(exc)
                 last_was_parse_error = False
                 if attempt < self.max_retries - 1:
-                    time.sleep(NETWORK_ERROR_RETRY_DELAY)
+                    time.sleep(_backoff_delay(attempt))
 
         if last_was_parse_error:
             raise errors.EngineParseError(f"All retries exhausted. Last error: {last_error}")
@@ -800,6 +1006,7 @@ def sync_keys_from_env_file(
     keys_path: Path,
     env_file_path: Path,
     key_prefix: str = "GEMINI_KEY_",
+    diagnostics: list[str] = None,
 ) -> int:
     """
     Pull API keys out of a GlobalEnv BEJSON 104a env file (var_name /
@@ -818,15 +1025,30 @@ def sync_keys_from_env_file(
     env_file_path is missing, unreadable, or fails structural validation — a
     missing env file on a given device must not prevent the agent from
     starting with whatever keys are already in keys_path.
+
+    2026-08-20: added the optional diagnostics list. Elton's real device
+    showed exists=True for both env sources in the outer describe_env_
+    sources() diagnostic (added 2026-08-16) yet still synced 0 keys total --
+    that diagnostic only reports whether a path exists, not why a file that
+    DOES exist still yielded nothing once opened. The actual reason (parse
+    failure, structural-validation failure, zero matching rows) was only
+    ever going to logger.warning() -- stderr, not the session transcript
+    Elton actually shares. If a caller passes a list here, every "returning
+    0 for a substantive reason" branch below appends a plain-language
+    explanation to it instead of (or in addition to) just logging it.
     """
     env_file_path = Path(env_file_path)
     if not env_file_path.exists():
         logger.warning("[Engine_REST] env_file not found at %s — skipping key sync", env_file_path)
+        if diagnostics is not None:
+            diagnostics.append(f"{env_file_path}: does not exist")
         return 0
 
     env_doc = bejson_core_load_file(str(env_file_path))
     if not isinstance(env_doc, dict):
         logger.warning("[Engine_REST] Could not load env_file at %s — skipping key sync", env_file_path)
+        if diagnostics is not None:
+            diagnostics.append(f"{env_file_path}: exists but failed to load as JSON/BEJSON (see stderr for the parse error)")
         return 0
     result = validate_bejson(env_doc, is_file=False)
     if not result.valid:
@@ -834,6 +1056,8 @@ def sync_keys_from_env_file(
             "[Engine_REST] env_file %s failed structural validation: %s — skipping key sync",
             env_file_path, result.errors,
         )
+        if diagnostics is not None:
+            diagnostics.append(f"{env_file_path}: loaded but failed validate_bejson: {'; '.join(result.errors)}")
         return 0
 
     env_fmap = bejson_core_get_field_map(env_doc)
@@ -858,6 +1082,12 @@ def sync_keys_from_env_file(
     # NOTE: no early-return on empty candidate_rows here (there used to be
     # one) -- if every GEMINI_KEY_* entry has been removed from env_file,
     # that's exactly the case pruning below needs to still run for.
+    if not candidate_rows and diagnostics is not None:
+        total_rows = len(env_doc.get("Values", []))
+        diagnostics.append(
+            f"{env_file_path}: loaded and valid, {total_rows} total row(s), "
+            f"but none match var_name starting with '{key_prefix}' with a non-empty var_value"
+        )
 
     existing_doc = None
     if keys_path.exists():
@@ -895,22 +1125,32 @@ def sync_keys_from_env_file(
     # (never touches a hand-added key with a different label) and whose
     # value is no longer present in env_file. Reactivate one that
     # reappears, in case a key was temporarily pulled and restored.
+    #
+    # BUGFIX 2026-08-20: only run the deactivate/reactivate pass when
+    # this source file actually contained at least one row matching
+    # key_prefix. A file that has ZERO matching rows (e.g. paths.json
+    # which holds path vars, not API keys) has no authority to revoke
+    # keys that another source (secureenv_file.json) contributed. The
+    # multi-source wrapper calls this function once per source; without
+    # this guard, the second call (paths.json, 0 GEMINI_KEY_* rows)
+    # would deactivate every key the first call just added/reactivated.
     deactivated = 0
     reactivated = 0
-    for r in existing_rows:
-        if len(r) <= max(key_idx, label_idx, active_idx):
-            continue
-        label = r[label_idx]
-        if not isinstance(label, str) or not label.startswith(key_prefix):
-            continue
-        is_env_key_still_present = r[key_idx] in candidate_values
-        currently_active = r[active_idx] is not False
-        if is_env_key_still_present and not currently_active:
-            r[active_idx] = True
-            reactivated += 1
-        elif not is_env_key_still_present and currently_active:
-            r[active_idx] = False
-            deactivated += 1
+    if candidate_rows:
+        for r in existing_rows:
+            if len(r) <= max(key_idx, label_idx, active_idx):
+                continue
+            label = r[label_idx]
+            if not isinstance(label, str) or not label.startswith(key_prefix):
+                continue
+            is_env_key_still_present = r[key_idx] in candidate_values
+            currently_active = r[active_idx] is not False
+            if is_env_key_still_present and not currently_active:
+                r[active_idx] = True
+                reactivated += 1
+            elif not is_env_key_still_present and currently_active:
+                r[active_idx] = False
+                deactivated += 1
 
     if added == 0 and deactivated == 0 and reactivated == 0:
         return 0
@@ -925,6 +1165,70 @@ def sync_keys_from_env_file(
         key_prefix, added, deactivated, reactivated,
     )
     return added
+
+def sync_keys_from_env_sources(
+    keys_path: Path,
+    config: dict,
+    key_prefix: str = "GEMINI_KEY_",
+) -> tuple[int, str]:
+    """
+    New split-scheme entry point. Resolves env_secure_file_path +
+    env_paths_file_path (or the legacy env_file_path fallback) via
+    lib_bejson_newagent_env.resolve_env_bejson_sources(), then calls
+    sync_keys_from_env_file() once per resolved source. GEMINI_KEY_* rows
+    live in the secure file in practice, but this doesn't assume that --
+    every resolved source is checked, so a key mistakenly placed in the
+    paths file is still picked up.
+
+    Returns (total_added, detail) -- detail is "" when total_added > 0,
+    otherwise a human-readable explanation of why every resolved source
+    yielded nothing. Changed from a bare int 2026-08-20: checked all 3
+    call sites (agent.py/webagent.py/cliagent.py) first and confirmed none
+    of them captured the return value, so this doesn't actually break
+    anything despite the earlier docstring's promise to keep the contract
+    stable -- but agent.py now captures and logs `detail` into the session
+    transcript, which is the whole point of this change (see below).
+
+    2026-08-20: the describe_env_sources() diagnostic (2026-08-16) reported
+    exists=True on both of Elton's real files, yet total still came back 0
+    -- proving a file existing isn't the same as it actually yielding keys
+    once opened, and the real per-file reason (parse failure, validation
+    failure, zero matching rows -- see sync_keys_from_env_file's new
+    diagnostics param) was only ever reaching stderr via logger.warning,
+    never the session transcript. Now collects those per-file reasons and
+    folds them into `detail`.
+    """
+    total_added = 0
+    per_file_diagnostics: list[str] = []
+    for src in newagent_env.resolve_env_bejson_sources(config):
+        total_added += sync_keys_from_env_file(keys_path, src, key_prefix, diagnostics=per_file_diagnostics)
+    detail = ""
+    if total_added == 0:
+        # 2026-08-20: total_added counts NEWLY added keys, not total active
+        # keys -- an idempotent re-run where every key from env_file was
+        # already in keys.bejson correctly reports total_added == 0 too,
+        # which used to fire this same "Synced 0 keys" alarm even though
+        # nothing is actually wrong. Check keys.bejson's real current
+        # active count for this key_prefix before crying wolf.
+        existing_active = 0
+        if keys_path.exists():
+            existing_doc = bejson_core_load_file(str(keys_path))
+            if isinstance(existing_doc, dict):
+                fmap = bejson_core_get_field_map(existing_doc)
+                label_i, active_i = fmap.get("label", 1), fmap.get("is_active", 2)
+                existing_active = sum(
+                    1 for r in existing_doc.get("Values", [])
+                    if len(r) > max(label_i, active_i)
+                    and isinstance(r[label_i], str) and r[label_i].startswith(key_prefix)
+                    and r[active_i] is not False
+                )
+        if existing_active == 0:
+            diag = newagent_env.describe_env_sources(config)
+            file_detail = " | ".join(per_file_diagnostics) if per_file_diagnostics else "(all resolved sources yielded keys=0 with no specific reason recorded)"
+            detail = f"{diag} DETAIL: {file_detail}"
+            print(f"[EnvSync] Synced 0 keys. {detail}")
+            logger.warning("[EnvSync] Synced 0 keys. %s", detail)
+    return total_added, detail
 
 def build_default_models_bejson(path: Path, default_model: str = "gemini-2.5-flash") -> None:
     if path.exists():
@@ -970,7 +1274,11 @@ def backfill_model_catalog_api_profile(path: Path) -> None:
     if "api_profile" in fmap:
         return
 
-    known_profiles = {row[1]: row[6] for row in DEFAULT_MODEL_CATALOG}
+    _catalog_fmap = {f["name"]: i for i, f in enumerate(_CATALOG_FIELDS)}
+    known_profiles = {
+        row[_catalog_fmap["model_string"]]: row[_catalog_fmap["api_profile"]]
+        for row in DEFAULT_MODEL_CATALOG
+    }
     model_idx = fmap.get("model_string", 1)
     rows = doc.get("Values", [])
     for row in rows:
@@ -1028,3 +1336,40 @@ def load_model_catalog(path: Path) -> list[dict]:
         rows.append(entry)
     rows.sort(key=lambda r: r.get("model_number", 0))
     return rows
+
+
+def check_catalog_key_expiry(catalog: list[dict], warn_within_days: int = 7) -> list[str]:
+    """FIX (2026-08-31, audit F-46): a temporary/beta provider key's expiry
+    date used to only ever live as free text inside a catalog row's own
+    notes column (e.g. "...key valid through 2026-08-27.") -- readable by
+    a person scanning the catalog by eye, but nothing in code ever parsed
+    it or warned about it. Reads the key_valid_through field (added
+    alongside this fix; empty for any row with no known expiry -- most
+    entries are standard GA models with no such date at all) and returns
+    a list of human-readable warning strings for anything already
+    expired or expiring within warn_within_days. An unparseable date
+    string is reported as its own warning rather than silently ignored
+    or raising -- a typo'd date is exactly the kind of thing this check
+    exists to catch, not something it should quietly swallow.
+    """
+    warnings = []
+    today = datetime.now().date()
+    for row in catalog:
+        raw_date = (row.get("key_valid_through") or "").strip()
+        if not raw_date:
+            continue
+        try:
+            expiry = datetime.strptime(raw_date, "%Y-%m-%d").date()
+        except ValueError:
+            warnings.append(
+                f"{row.get('display_name', row.get('model_string', '?'))}: "
+                f"key_valid_through value '{raw_date}' isn't a valid YYYY-MM-DD date -- check the catalog entry."
+            )
+            continue
+        days_left = (expiry - today).days
+        name = row.get("display_name") or row.get("model_string") or "?"
+        if days_left < 0:
+            warnings.append(f"{name}: key EXPIRED {-days_left} day(s) ago ({raw_date}) -- this provider will likely fail.")
+        elif days_left <= warn_within_days:
+            warnings.append(f"{name}: key expires in {days_left} day(s) ({raw_date}) -- plan a replacement soon.")
+    return warnings

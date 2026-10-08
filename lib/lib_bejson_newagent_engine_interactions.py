@@ -2,12 +2,19 @@
 Library:        lib_bejson_newagent_engine_interactions.py
 Family:         NewAgent
 Description:    Gemini Interactions API client with native function-calling loop.
-Version:        1.1.0
-Date:           2026-08-09
+Version:        1.2.0
+Date:           2026-09-18
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  7711b7dc-587d-49a7-a5e6-6bfdfd0734a8
+RELATIONAL_ID:  7cf59ba2-1f32-49f2-80d1-f98e5c09821a
 
 CHANGELOG:
+- 1.2.0 (2026-09-18): Remediation pass. This file's next_key() call site
+  shares lib_bejson_newagent_engine_rest.py's KeyRegistry -- inherits that
+  file's 1.17.0 fix for the all-keys-cooldown zero-delay hammering bug
+  automatically. Updated here: the "No API keys available." RuntimeError
+  now distinguishes unconfigured vs. all-cooling-down, matching
+  engine_rest.py's clearer message (see that file's 1.17.0 changelog for
+  the full root-cause writeup). Verified: py_compile clean.
 - 1.1.0 (2026-08-09): Full audit against the current official Interactions
   API docs (ai.google.dev/gemini-api/docs/interactions-overview,
   /get-started, /api-errors, and the May 2026 breaking-changes migration
@@ -53,8 +60,9 @@ import logging
 from typing import Any, Callable, Optional
 
 import aiohttp
+from lib_bejson_newagent_actions import is_command_denylisted
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 logger = logging.getLogger(__name__)
 
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
@@ -435,7 +443,16 @@ class InteractionsPrompter:
         for attempt in range(3):
             key = self.key_reg.next_key()
             if not key:
-                raise RuntimeError("No API keys available.")
+                # Shares KeyRegistry.next_key() with engine_rest.py -- see
+                # that file's Remediation pkg changelog entry for why this
+                # message now distinguishes "unconfigured" from "all keys
+                # cooling down" instead of one generic message for both.
+                if not self.key_reg.keys:
+                    raise RuntimeError("No API keys configured.")
+                raise RuntimeError(
+                    "All API keys are rate-limited/cooling down "
+                    "(waited for the soonest one; still not ready)."
+                )
 
             headers = {
                 "Content-Type": "application/json",
@@ -535,9 +552,16 @@ class InteractionsPrompter:
 
         if name == "exec_shell" and denylist:
             cmd = arguments.get("command", "")
-            for blocked in denylist:
-                if cmd.strip().startswith(blocked):
-                    return f"[BLOCKED] Command matches denylist: {blocked}", False
+            # FIX (2026-08-25, audit F-03): this used to be its own
+            # `cmd.strip().startswith(blocked)` check -- prefix-only,
+            # trivially bypassed by `echo hi && rm -rf /` etc. Now shares
+            # the one substring-anywhere check lib_bejson_newagent_actions
+            # .do_exec() itself also enforces, so agent.py's tool-call
+            # path and webagent.py's direct /api/exec HTTP path can't
+            # drift out of sync with each other again.
+            blocked_on = is_command_denylisted(cmd, denylist)
+            if blocked_on:
+                return f"[BLOCKED] Command matches denylist: {blocked_on}", False
 
         if dryrun:
             return f"[DRYRUN] Would call {name}({arguments})", True

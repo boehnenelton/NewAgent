@@ -15,5 +15,10 @@
       "type": "string"
     }
   ],
-  "Values": []
+  "Values": [
+    [
+      "Workspace Taxonomy",
+      "Folder Tiers in Workspace Organization:\n1. Catalog folder: Top-level organizational container that holds many gallery folders (e.g., `/storage/emulated/0/Admin/dev` is a catalog folder).\n2. Gallery folder: Categorized collection / portfolio directory holding related items (e.g., `Python`, `Bash`, `Web` gallery folders inside a catalog, or folders of images, documents, MP3s).\n3. Project folder: Main entity container for a single work item or item unit (e.g., an individual software project with dependent folders, a folder containing an ebook, etc.).\n4. Dependent folder: A folder containing data files, text, code, or documents that are part of a project folder. These MUST NEVER be moved from their parent directory.\n\nHierarchy Example:\nCatalog (`/storage/emulated/0/Admin/dev`) \u2794 Gallery (`Python`, `Bash`, `Web`) \u2794 Project (`ProjectName`) \u2794 Dependent (`data`, `docs`, `lib`)"
+    ]
+  ]
 }

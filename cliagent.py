@@ -3,10 +3,23 @@
 Name:         cliagent.py
 Family:       NewAgent
 Description:  CLI interface to run prompts against NewAgent engine (REST/Interactions) non-interactively or from scripts.
-Version:      1.2.0
-Date:         2026-08-05
+Version:      1.3.1
+Date:         2026-08-20
 Author:       Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID: 822614cf-fe8b-445d-90ad-7c129b27179c
+RELATIONAL_ID: f4a7c1e9-3b6d-4f8a-9c2e-6d1a4b7f9e53
+
+CHANGELOG:
+- 1.3.1 (2026-08-20): sync_keys_from_env_sources() now returns
+  (total_added, detail) instead of a bare int (see engine_rest.py 1.16.3).
+  cliagent.py doesn't capture/use the return value either way (no
+  SessionLogger here to log detail into), so this is a no-op change here
+  beyond a clarifying comment at the call site -- included for version
+  parity with agent.py after the shared function's signature changed.
+- 1.3.0 (2026-08-16): Key sync now calls rest.sync_keys_from_env_sources
+  (new split env_secure_file_path/env_paths_file_path, legacy env_file_path
+  fallback only if neither exists) instead of sync_keys_from_env_file
+  against one hardcoded path. cliagent.py doesn't call assemble_bubble
+  (no bubble drip in this entrypoint) so no other change needed here.
 """
 
 import argparse
@@ -26,13 +39,23 @@ import lib_bejson_newagent_engine_rest as rest
 import lib_bejson_newagent_engine_interactions as interactions
 import lib_bejson_newagent_actions as actions
 import lib_bejson_newagent_errors as errors
+import lib_bejson_newagent_tui as tui
 
-VERSION = "1.2.0"
+VERSION = "1.4.0"
 
 CONFIG_DIR = SCRIPT_PATH / "config"
 LOGS_DIR = SCRIPT_PATH / "logs"
 BACKUPS_DIR = SCRIPT_PATH / "backups"
 CONTEXT_DIR = SCRIPT_PATH / "Context"
+# FIX (2026-09-11, audit remediation Part 1 §2 "Missing Context Keys"):
+# the --execute ctx dict below never carried a jobs directory at all, so
+# any job_task_done action tag the model emitted would always hit the
+# "No active job" branch in run_action_queue -- not because cliagent
+# genuinely has no active job (a reasonable state for a one-shot CLI call)
+# but because ctx["_jobs_dir"] didn't exist to look one up in even if it
+# did. Defining JOBS_DIR here so the ctx dict can at least be complete/
+# consistent with agent.py's and webagent.py's contract.
+JOBS_DIR = SCRIPT_PATH / "jobs"
 KEYS_PATH = CONFIG_DIR / "keys.bejson"
 STATE_PATH = CONFIG_DIR / "key_state.bejson"
 MODELS_PATH = CONFIG_DIR / "models.bejson"
@@ -167,7 +190,7 @@ async def run_cliagent():
 
     config = config_lib.init_config(CONFIG_PATH)
     cli_config = config_lib.init_config(CLI_CONFIG_PATH, schema=CLI_DEFAULT_CONFIG)
-    rest.sync_keys_from_env_file(KEYS_PATH, Path(config.get("env_file_path", "")))
+    rest.sync_keys_from_env_sources(KEYS_PATH, config)  # returns (added, detail) now; cliagent has no SessionLogger to log detail into -- print()/logger.warning() inside still cover it
 
     key_reg = rest.KeyRegistry(KEYS_PATH, STATE_PATH)
     model_reg = rest.ModelRegistry(MODELS_PATH)
@@ -213,26 +236,75 @@ async def run_cliagent():
         )
 
         if do_execute:
-            parsed_actions = actions.parse_xml_actions(response_text)
+            # FIX (2026-09-11, audit V106-03/V106-31): three compounding
+            # bugs made --execute unusable as written:
+            #  1. actions.parse_xml_actions() doesn't exist anywhere in
+            #     the actions lib -- only parse_actions() does (that's
+            #     what agent.py's own REST path calls). This line raised
+            #     AttributeError before anything else ran.
+            #  2. run_action_queue()'s real contract (agent.py's own call
+            #     site, and its own signature: `-> list[ExecResult]`) is
+            #     a list of result objects, not a (output, cwd, _) tuple
+            #     -- the old unpack raised ValueError.
+            #  3. ctx used key "cwd"; run_action_queue reads ctx["_cwd"]
+            #     unconditionally (agent.py's contract everywhere). It
+            #     also reads ctx["config"] and ctx["stats"].execs
+            #     unconditionally, and ctx["_backups_dir"] if a
+            #     checkpoint action runs -- none of which the old ctx
+            #     dict here provided, so even a corrected unpack would
+            #     still KeyError on the first executed action.
+            parsed_actions = actions.parse_actions(response_text)
             if parsed_actions:
                 ctx = {
                     "config": config,
-                    "cwd": cwd,
-                    "exec_results": exec_results,
+                    "_cwd": cwd,
+                    "stats": tui.SessionStats(engine="rest"),
                     "_shell_env": None,
                     "_backups_dir": BACKUPS_DIR,
                     "_config_dir": CONFIG_DIR,
+                    # FIX (2026-09-11, audit remediation Part 1 §2): these
+                    # three were missing entirely -- a job_task_done tag
+                    # would previously always report "No active job" since
+                    # ctx.get("_jobs_dir") had nothing to look up even a
+                    # genuinely active job in. cliagent is one-shot/non-
+                    # interactive so there is no persisted "active job"
+                    # across calls -- _active_job_path/_active_job_doc stay
+                    # None here by design, not by omission -- but
+                    # _jobs_dir is now real, matching agent.py/webagent.py's
+                    # ctx contract instead of silently missing it.
+                    "_jobs_dir": JOBS_DIR,
+                    "_active_job_path": None,
+                    "_active_job_doc": None,
                 }
-                res_output, updated_cwd, _ = await actions.run_action_queue(parsed_actions, ctx)
-                cwd = updated_cwd
+                results = await actions.run_action_queue(parsed_actions, ctx)
+                cwd = ctx["_cwd"]
+                exec_results.extend(results)
                 executed_actions = [a.get("tag") for a in parsed_actions]
 
     else:
         # Engine Interactions
         async def async_run_exec(command: str) -> str:
+            # FIX (2026-09-11, audit remediation Part 1 §2 "Stale CWD in
+            # Interactions Mode"): new_cwd used to be unpacked and
+            # immediately discarded (`code, out, new_cwd, _ = ...`). Every
+            # do_map lambda below (do_read_file, do_write_file,
+            # do_list_dir, etc.) closes over the same `cwd` name from
+            # run_cliagent()'s scope, so if the model issued a `cd` via
+            # this exec tool, every subsequent tool call in that same
+            # turn still ran against the pre-cd directory -- the state
+            # change was silently thrown away instead of propagated back.
+            # `nonlocal cwd` + assignment here fixes it exactly once, at
+            # the source, rather than needing every lambda in do_map
+            # patched individually -- they all read the same rebound name.
+            nonlocal cwd
             code, out, new_cwd, _ = await actions.do_exec(
-                command, cwd, config.get("exec_timeout_seconds", 60), live_feed=False
+                command, cwd, config.get("exec_timeout_seconds", 60), live_feed=False,
+                # FIX (2026-09-11, audit V106-09): same denylist gap as
+                # agent.py's Interactions-mode exec wrapper -- wired in.
+                denylist=config.get("exec_denylist"),
             )
+            if new_cwd:
+                cwd = new_cwd
             return out
 
         do_map = {
@@ -285,7 +357,7 @@ async def run_cliagent():
         if exec_results:
             print("\n--- Executed Tool Results ---")
             for r in exec_results:
-                print(f"[{r.tag}] {r.command or r.path or ''}\n{r.output}\n")
+                print(f"[{r.action_type}] {r.source or ''}\n{r.output}\n")
 
 def main():
     try:

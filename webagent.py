@@ -12,12 +12,29 @@ Description:  Flask-based web terminal wrapper for NewAgent. Serves the
               wired to a working loop yet. Sits in the same directory as
               agent.py and shares its config/keys/models files -- not a
               separate project.
-Version:      0.11.0
-Date:         2026-08-09
+Version:      0.12.1
+Date:         2026-08-20
 Author:       Elton Boehnen -- boehnenelton2024@gmail.com
-RELATIONAL_ID: 8b0c2e4f-6a8d-4c0e-9f2b-4a6c8e0a2c68
+RELATIONAL_ID: e7f1a4c8-6b3d-4e9f-8a2c-5d7b1e4f9c30
 
 CHANGELOG:
+- 0.12.1 (2026-08-20): sync_keys_from_env_sources() now returns
+  (total_added, detail) instead of a bare int (see engine_rest.py 1.16.3).
+  webagent.py doesn't capture/use the return value either way (no
+  SessionLogger here to log detail into), so this is a no-op change here
+  beyond a clarifying comment at the call site -- included for version
+  parity with agent.py/cliagent.py after the shared function's signature
+  changed.
+- 0.12.0 (2026-08-16): Environment migration. Startup sourcing now calls
+  lib_bejson_newagent_env.newagent_source_env() (new split secure/paths .py
+  files primary, legacy env_file.py fallback via Core's own chain) instead
+  of a bare source_env(). Key sync now calls rest.sync_keys_from_env_sources
+  (resolves both new BEJSON doc sources, or the legacy single file as
+  fallback) instead of sync_keys_from_env_file against one hardcoded path.
+  assemble_bubble() call passes env_file_paths (list, from
+  newagent_env.resolve_env_bejson_sources) instead of a single env_file_path
+  string. get_env_path()/quickjumps untouched -- still reads whatever
+  newagent_source_env() populated into os.environ.
 - 0.11.0 (2026-08-09): Renamed Compress/api/compress to Amnesia per
   Elton's follow-up, and split it into two steps matching agent.py's
   /amnesia + /rebirth. POST /api/amnesia compresses+wipes self.history
@@ -78,6 +95,8 @@ CHANGELOG:
 
 import sys
 import asyncio
+import secrets
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -94,20 +113,82 @@ import lib_bejson_newagent_context_bubble as bubble
 import lib_bejson_newagent_tui as tui
 import lib_bejson_newagent_errors as errors
 import lib_bejson_newagent_jobs as jobs
-from lib_bejson_Core_bejson_env import source_env, get_env_path
+import lib_bejson_newagent_env as newagent_env
+from lib_bejson_Core_bejson_env import get_env_path
 
-# Mandatory environment sourcing (policy Sec 10) -- populates os.environ from
-# env_file.py/env_file.json so INTERNAL_STORAGE, SD_CARD, etc. are readable
-# via get_env_path() below instead of ever hardcoding a guessed path.
-source_env()
+# Mandatory environment sourcing (policy Sec 10) -- populates os.environ so
+# INTERNAL_STORAGE, SD_CARD, etc. are readable via get_env_path() below
+# instead of ever hardcoding a guessed path. New split scheme (secure/paths
+# .py files) is primary; falls through to the legacy env_file.py chain only
+# if neither new file exists -- see lib_bejson_newagent_env.py.
+newagent_env.newagent_source_env()
 
-VERSION = "0.11.0"
+VERSION = "0.12.2"
 
 # Directories/paths -- identical layout to agent.py, since webagent.py is a
 # sibling entry point sharing the same project, not a separate install.
 BASE_DIR = Path(__file__).resolve().parent
 CONFIG_DIR = BASE_DIR / "config"
 CONFIG_PATH = CONFIG_DIR / "config.json"
+
+# FIX (2026-08-27, audit F-09): asyncio.run() used to be called fresh on
+# every single request -- creating and tearing down a whole event loop
+# per call. That's functionally correct but throws away any chance of
+# async resource reuse, adds real per-request overhead, and would raise
+# RuntimeError outright if this app were ever run under an ASGI adapter
+# (calling asyncio.run() from inside an already-running loop is not
+# allowed). One persistent background loop, running forever in its own
+# daemon thread, replaces every asyncio.run() call site -- Flask's
+# synchronous route handlers dispatch into it via
+# run_coroutine_threadsafe().result(), never spin up their own loop.
+_background_loop = asyncio.new_event_loop()
+_background_loop_thread = threading.Thread(
+    target=_background_loop.run_forever, name="webagent-event-loop", daemon=True
+)
+_background_loop_thread.start()
+
+
+def run_async(coro, timeout=None):
+    """Runs an async coroutine on the persistent background loop from
+    synchronous Flask route code, blocking the calling (request) thread
+    until it completes. Replaces every asyncio.run(...) call site."""
+    future = asyncio.run_coroutine_threadsafe(coro, _background_loop)
+    return future.result(timeout=timeout)
+
+
+def describe_attachment_path(raw_path: str) -> str:
+    """FIX (2026-09-11, audit remediation Part 1 §4 "Attachment Path
+    Traversal"): api_chat() used to inject whatever raw string the client
+    sent for each attachment straight into the model-facing prompt with
+    zero validation that it existed, resolved cleanly, or wasn't just a
+    typo/garbage path -- the audit's point wasn't that this endpoint
+    itself reads the file (it never does -- attachments are read-only
+    reference *pointers*, by design, see api_chat()'s own docstring/
+    comments), it's that a path traversal or dead path was surfaced to
+    the model with no indication anything was wrong, and the model (or a
+    human skimming the transcript) had no signal to distinguish a real
+    attachment from a broken or spoofed one before deciding whether to
+    act on it via its own <exec>/<read_file> tags (which have their own,
+    separate guards -- lib_bejson_Core_bejson_path_guard, exec denylist
+    -- unaffected by this change).
+
+    This resolves the path to its real, canonical, absolute form
+    (collapsing any ../ traversal segments so what's shown is what will
+    actually be accessed, not an obfuscated relative string) and flags
+    it inline if it doesn't exist on disk -- it does not reject or hide
+    the path (this tool is an intentional, unrestricted, personal
+    filesystem browser -- see api_files_browse()'s own comment on that),
+    it just stops presenting an unresolved/dead path as if it were a
+    verified one.
+    """
+    try:
+        resolved = Path(raw_path).expanduser().resolve()
+    except (OSError, RuntimeError) as exc:
+        return f"{raw_path}  [UNRESOLVABLE: {exc}]"
+    if not resolved.exists():
+        return f"{resolved}  [NOT FOUND -- no file exists at this path]"
+    return str(resolved)
+
 KEYS_PATH = CONFIG_DIR / "keys.bejson"
 STATE_PATH = CONFIG_DIR / "key_state.bejson"
 MODELS_PATH = CONFIG_DIR / "models.bejson"
@@ -1080,7 +1161,22 @@ HTML = """
             }
 
             // Start boot timeline immediately
-            runTimeline();
+            // FIX (2026-08-31, audit F-54): the ~6s animated boot sequence
+            // ran unconditionally on every single page load with no way
+            // to skip it -- a real friction point during development/
+            // testing, where this page gets reloaded repeatedly. Checking
+            // for ?skip_boot=1 in the URL and jumping straight to the
+            // terminal screen if present, bypassing every animated phase
+            // (typing, cube explosion, title scramble) entirely rather
+            // than just speeding them up.
+            if (new URLSearchParams(window.location.search).get('skip_boot') === '1') {
+                bootScreen.style.display = 'none';
+                terminalScreen.style.display = 'flex';
+                terminalScreen.style.opacity = '1';
+                cmdInput.focus();
+            } else {
+                runTimeline();
+            }
 
 
             // --- TERMINAL & GUI LOGIC ---
@@ -1481,7 +1577,7 @@ HTML = """
                 // Whether the recap is fed straight back in ("reborn") or
                 // left waiting for a manual Rebirth click depends on the
                 // auto_amnesia_memory_retrieval setting (Config tab).
-                if (!confirm('Compress and wipe the agent\'s session memory?\n\nThis replaces its entire working memory with a single compressed recap. Depending on the Config tab\'s "auto_amnesia_memory_retrieval" setting, the recap is either fed straight back in or left waiting for a manual Rebirth. Your on-disk logs are not affected.')) {
+                if (!confirm('Compress and wipe the agent\\'s session memory?\\n\\nThis replaces its entire working memory with a single compressed recap. Depending on the Config tab\\'s "auto_amnesia_memory_retrieval" setting, the recap is either fed straight back in or left waiting for a manual Rebirth. Your on-disk logs are not affected.')) {
                     return;
                 }
                 appendLog('[amnesia] Compressing session memory...');
@@ -1524,7 +1620,6 @@ HTML = """
                 try {
                     const resp = await fetch('/api/status');
                     const data = await resp.json();
-                    document.getElementById('status-model').textContent = data.active_model || '--';
                     document.getElementById('status-engine').textContent = (data.engine || 'rest').toUpperCase();
                     document.getElementById('status-keys').textContent =
                         `${data.keys_available ?? '--'}/${data.key_count ?? '--'}`;
@@ -1819,22 +1914,48 @@ class WebAgentTerminal:
       same async subprocess engine agent.py's <exec> action tag already
       uses and that is already tested elsewhere in this project. No second
       shell-execution implementation was written for this.
-    - The LLM chat engine (KeyRegistry, ModelRegistry, RestPrompter) is
-      constructed in __init__ so it is ready to use, sharing the same
-      config/keys/models files agent.py reads -- but /api/chat is an
-      intentional stub (501 Not Implemented) rather than a guessed-at chat
-      loop, since that behavior was explicitly deferred.
-    - State (cwd, shell env) is held on the instance, single-session --
-      there is no per-browser-tab isolation yet. That is a known, accepted
-      groundwork limitation, not an oversight: a second client connecting
-      would share the same cwd/env as the first. Revisit if/when this needs
-      to support more than one concurrent user.
+    - /api/chat is ALSO real (was drafted here as a 501 stub in an earlier
+      pass -- this paragraph used to say so; that's now stale documentation,
+      not current behavior). It runs the actual NewAgent turn loop
+      (assemble Context Bubble -> build system prompt -> call the REST
+      engine -> parse action tags -> run_action_queue), sharing the same
+      config/keys/models files agent.py reads. See api_chat()'s own
+      docstring below.
+    - State (cwd, shell env, chat history) is held on the instance,
+      single-session -- there is no per-browser-tab isolation yet. That is
+      a known, accepted groundwork limitation, not an oversight: a second
+      client connecting would share the same cwd/env/history as the first.
+      Revisit if/when this needs to support more than one concurrent user.
+    - FIX (2026-09-11, audit remediation Part 1 §1 "Shared State Race
+      Condition"): the single-session limitation above is accepted, but
+      Flask's default dev server still handles requests on separate
+      threads, and /api/chat/​/api/exec used to mutate self.history,
+      self._cwd, self._shell_env, self._active_job_path/doc, and
+      self.turn_count with no synchronization at all. Two concurrent
+      requests (two browser tabs, or a rapid double-click) could interleave
+      history appends and cwd/turn_count reads-then-writes mid-turn,
+      corrupting the transcript and cross-contaminating context bubble
+      assembly between what were meant to be two sequential turns. This
+      does NOT add multi-session isolation (still one shared cwd/history
+      for the whole process, by design per above) -- it only makes the
+      single session's own state mutations atomic with respect to each
+      other, via self._state_lock (a plain threading.Lock held for the
+      full body of api_chat()/api_exec()). A real fix for genuine
+      multi-user isolation would be per-session state, which is out of
+      scope here (see "known groundwork limitation" above).
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 5001):
+    def __init__(self, host: str = "127.0.0.1", port: int = 5001):
         self.host = host
         self.port = port
         self.app = Flask(__name__)
+
+        # FIX (2026-09-11, audit remediation Part 1 §1): guards every
+        # mutation of the single-session state below (self._cwd,
+        # self._shell_env, self.history, self.turn_count,
+        # self._active_job_path/doc) across concurrent Flask request
+        # threads. See class docstring.
+        self._state_lock = threading.Lock()
 
         # Single-session state (see class docstring -- known groundwork
         # limitation, not multi-user safe yet).
@@ -1849,6 +1970,27 @@ class WebAgentTerminal:
         # Config -- shared with agent.py, not a separate config file.
         self.config = config_lib.init_config(CONFIG_PATH)
 
+        # FIX (2026-08-25, audit F-02): every route here used to be
+        # completely unauthenticated and reachable from any device on the
+        # network (host defaulted to 0.0.0.0, no session token, no Basic
+        # Auth, no before_request guard) -- combined with /api/exec, that
+        # was a live unauthenticated RCE path. host now defaults to
+        # loopback-only (127.0.0.1); this generates (once) and persists a
+        # shared-secret token that every request must now present, via
+        # either an X-Auth-Token header or a ?token= query param.
+        # FIX (2026-09-11, audit remediation Part 1 §3 "Token Generation
+        # Race"): this used to be an inline "if empty, generate + save"
+        # check -- if webagent.py and JobMaker.py both booted against a
+        # fresh config.json at the same moment, each could independently
+        # generate its own token and the last atomic_write to land would
+        # silently win, leaving the other process rejecting every request
+        # with a token that no longer matched disk. get_or_create_web_auth_
+        # token() closes that with a lock file (see lib_bejson_newagent_
+        # config.py 1.14.0) shared by both call sites.
+        self.web_token = config_lib.get_or_create_web_auth_token(CONFIG_PATH, self.config)
+        print(f"[webagent] Auth token (send as X-Auth-Token header or ?token= param): {self.web_token}")
+        print(f"[webagent] Listening on {host}:{port} -- change host explicitly if you need this reachable beyond localhost, and understand what that exposes before you do.")
+
         # Chat/LLM engine -- reuses the exact same classes agent.py uses.
         # Sync keys FROM the canonical env_file.json before constructing
         # KeyRegistry -- agent.py already does this at bootstrap; webagent.py
@@ -1856,7 +1998,7 @@ class WebAgentTerminal:
         # keys.bejson instead of the real source of truth. keys.bejson is a
         # derived, regenerable cache -- never hand-maintained, never the
         # actual source.
-        rest.sync_keys_from_env_file(KEYS_PATH, Path(self.config.get("env_file_path", "")))
+        rest.sync_keys_from_env_sources(KEYS_PATH, self.config)  # returns (added, detail) now; webagent has no SessionLogger to log detail into -- print()/logger.warning() inside still cover it
         self.key_reg = rest.KeyRegistry(KEYS_PATH, STATE_PATH)
         self.model_reg = rest.ModelRegistry(MODELS_PATH)
         self.rest_prompter = rest.RestPrompter(
@@ -1881,6 +2023,75 @@ class WebAgentTerminal:
     def _register_routes(self) -> None:
         app = self.app
 
+        @app.before_request
+        def _require_auth_token():
+            # FIX (2026-08-25, audit F-02): gates every route (including
+            # `/` itself, not just /api/*) -- an attacker seeing the raw
+            # terminal UI without the exec/config/file endpoints behind
+            # it is still more surface than this tool needs to expose.
+            # Constant-time compare (secrets.compare_digest) so response
+            # timing can't be used to guess the token character-by-character.
+            #
+            # This same check also resolves audit F-10 (no CSRF
+            # protection): CSRF's whole premise is a malicious page
+            # issuing a request that rides on ambient browser-held
+            # authority the attacker never has to know -- a cookie, or
+            # HTTP Basic Auth cached by the browser -- which gets
+            # attached automatically. This app has no such ambient
+            # credential: the token is neither a cookie nor anything the
+            # browser sends on its own, and a page on another origin has
+            # no way to read or guess it. A same-origin form auto-POSTing
+            # here has nothing to authenticate the request either -- it
+            # would need to already know self.web_token, at which point
+            # the attacker already has full legitimate access and CSRF
+            # isn't buying them anything. No separate CSRF-token system
+            # was added on top of this for that reason -- it would be
+            # defending against a threat model this design doesn't have.
+            supplied = request.headers.get("X-Auth-Token") or request.args.get("token") or ""
+            if not secrets.compare_digest(supplied, self.web_token):
+                return jsonify({"error": "Unauthorized -- missing or incorrect auth token."}), 401
+
+        @app.after_request
+        def _set_security_headers(response):
+            # FIX (2026-08-27, audit F-20): no response carried any of
+            # the standard defensive headers at all. Individually minor,
+            # but "combined with F-02" is the audit's own framing for a
+            # reason -- a personal admin tool with real command-exec
+            # power is exactly the kind of app where clickjacking
+            # (embedding this UI in an invisible iframe on another page)
+            # and MIME-sniffing (a browser deciding to execute an
+            # uploaded file as something other than what it's served as)
+            # are worth closing even though F-02's auth already closes
+            # the bigger hole. No inline third-party origins are needed
+            # here -- this UI has no external script/style dependencies
+            # -- so CSP can be strict rather than a permissive
+            # allowlist.
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            # CSP must allow 'unsafe-inline' for script-src/style-src --
+            # this UI's own HTML (see the HTML template near the top of
+            # this file) uses inline <script>/<style> tags, not external
+            # files, so a stricter default-src 'self' alone would break
+            # the terminal UI itself (inline script/style is blocked by
+            # default under CSP unless explicitly allowed). Still denies
+            # everything else (frame-ancestors, object-src, base-uri) by
+            # default, and still blocks any actual foreign-origin
+            # injection an XSS payload would need to exfiltrate data to.
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'; "
+                "object-src 'none'; base-uri 'self'"
+            )
+            response.headers["X-XSS-Protection"] = "1; mode=block"
+            # Strict-Transport-Security only makes sense once this is
+            # actually served over HTTPS -- this app is loopback-only by
+            # default (F-02) and plain HTTP; sending HSTS over an http://
+            # response is a no-op in every real browser but costs nothing
+            # to include for the day this might sit behind a TLS-
+            # terminating reverse proxy instead.
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            return response
+
         @app.route("/")
         def index():
             return render_template_string(HTML)
@@ -1893,18 +2104,29 @@ class WebAgentTerminal:
             if not command:
                 return jsonify({"output": "", "cwd": self._cwd, "exit_code": 0})
 
-            code, out, new_cwd, new_env = asyncio.run(
-                actions.do_exec(
-                    command,
-                    self._cwd,
-                    timeout=self.config.get("exec_timeout_seconds", 60),
-                    shell_env=self._shell_env,
+            # FIX (2026-09-11, audit remediation Part 1 §1): held for the
+            # full body -- do_exec() itself runs on the shared background
+            # asyncio loop (run_async), not this Flask request thread, so
+            # holding self._state_lock across that call doesn't block the
+            # background loop or risk a deadlock with it; it only keeps a
+            # second concurrent /api/exec or /api/chat request from
+            # reading/writing self._cwd / self._shell_env / self.stats
+            # while this one is still using them.
+            with self._state_lock:
+                code, out, new_cwd, new_env = run_async(
+                    actions.do_exec(
+                        command,
+                        self._cwd,
+                        timeout=self.config.get("exec_timeout_seconds", 60),
+                        shell_env=self._shell_env,
+                        denylist=self.config.get("exec_denylist"),
+                    )
                 )
-            )
-            self._cwd = new_cwd
-            if new_env is not None:
-                self._shell_env = new_env
-            self.stats.execs += 1
+                self._cwd = new_cwd
+                if new_env is not None:
+                    self._shell_env = new_env
+                self.stats.execs += 1
+                result_cwd = self._cwd
 
             # Groundwork only: attachments are acknowledged and logged here,
             # not fed into any deeper context yet -- there is no chat/context
@@ -1918,7 +2140,7 @@ class WebAgentTerminal:
 
             return jsonify({
                 "output": out,
-                "cwd": self._cwd,
+                "cwd": result_cwd,
                 "exit_code": code,
                 "attachments_received": len(attachments),
             })
@@ -1989,6 +2211,20 @@ class WebAgentTerminal:
 
         @app.route("/api/files/browse", methods=["GET"])
         def api_files_browse():
+            # NOTE on audit F-04 (2026-08-25): the audit flagged this as
+            # "unrestricted filesystem traversal, no jail" -- true, but
+            # deliberately so: this is a personal remote file browser for
+            # the device it runs on, and /api/files/quickjumps right above
+            # explicitly offers "/ (filesystem root)" and "SD Card" as
+            # first-class jump targets. Jailing this to one directory would
+            # break that intended feature, not fix a bug. The audit's own
+            # impact statement was "combined with F-02" -- i.e. this being
+            # reachable device-wide is only a real problem when it's ALSO
+            # reachable by anyone on the network with no auth. F-02's fix
+            # (auth token + loopback-only default, above) is what actually
+            # closes this: once a request has to prove it's Elton, broad
+            # on-device browsing is the intended feature working as
+            # designed, not an open oracle.
             raw_path = request.args.get("path") or str(BASE_DIR)
             try:
                 target = Path(raw_path).expanduser().resolve()
@@ -2031,105 +2267,125 @@ class WebAgentTerminal:
             uses) -- not a raw bash passthrough. The model decides what,
             if anything, to run; the human types a prompt, not a command.
             """
-            data = request.get_json(force=True, silent=True) or {}
-            user_msg = (data.get("message") or "").strip()
-            attachments = data.get("attachments") or []
-            if not user_msg:
-                return jsonify({"error": "empty message"}), 400
+            # FIX (2026-09-11, audit remediation Part 1 §1 "Shared
+            # State Race Condition"): the entire turn -- history
+            # append, bubble assembly, the REST call, action-queue
+            # execution, and the cwd/shell_env/turn_count/active_job
+            # writeback at the end -- now happens under self._state_lock.
+            # A second concurrent /api/chat or /api/exec call now waits
+            # for this whole turn to finish rather than interleaving its
+            # own history append or cwd read/write into the middle of
+            # this one. This does not add multi-session isolation (see
+            # class docstring) -- both callers still end up sharing one
+            # history/cwd, now just without corrupting it.
+            with self._state_lock:
+                data = request.get_json(force=True, silent=True) or {}
+                user_msg = (data.get("message") or "").strip()
+                attachments = data.get("attachments") or []
+                if not user_msg:
+                    return jsonify({"error": "empty message"}), 400
 
-            # Attachments are read-only reference pointers -- only the paths
-            # are surfaced to the model, never file contents. The model can
-            # choose to inspect them itself (e.g. via its own <exec>/
-            # bejson_fields tags) if it decides to; this endpoint never reads
-            # or alters attachment content on its own.
-            if attachments:
-                names = "\n".join(f"  - {a}" for a in attachments)
-                user_msg = f"{user_msg}\n\n[Attached reference file(s) -- for you to study if relevant, do not alter:\n{names}\n]"
+                # Attachments are read-only reference pointers -- only the paths
+                # are surfaced to the model, never file contents. The model can
+                # choose to inspect them itself (e.g. via its own <exec>/
+                # bejson_fields tags) if it decides to; this endpoint never reads
+                # or alters attachment content on its own.
+                if attachments:
+                    names = "\n".join(f"  - {describe_attachment_path(a)}" for a in attachments)
+                    user_msg = f"{user_msg}\n\n[Attached reference file(s) -- for you to study if relevant, do not alter:\n{names}\n]"
 
-            ts = datetime.now().strftime("%H:%M:%S")
-            self.history.append({"role": "user", "content": user_msg, "_ts": ts})
+                ts = datetime.now().strftime("%H:%M:%S")
+                self.history.append({"role": "user", "content": user_msg, "_ts": ts})
 
-            ctx = {
-                "_cwd": self._cwd,
-                "_shell_env": self._shell_env,
-                "config": self.config,
-                "_backups_dir": BACKUPS_DIR,
-                "_config_dir": CONFIG_DIR,
-                "_jobs_dir": JOBS_DIR,
-                "_active_job_path": self._active_job_path,
-                "_active_job_doc": self._active_job_doc,
-                "_continue_requested": False,
-                "stats": self.stats,
-                "key_call_counts": self.key_call_counts,
-            }
+                ctx = {
+                    "_cwd": self._cwd,
+                    "_shell_env": self._shell_env,
+                    "config": self.config,
+                    "_backups_dir": BACKUPS_DIR,
+                    "_config_dir": CONFIG_DIR,
+                    "_jobs_dir": JOBS_DIR,
+                    "_active_job_path": self._active_job_path,
+                    "_active_job_doc": self._active_job_doc,
+                    "_continue_requested": False,
+                    "stats": self.stats,
+                    "key_call_counts": self.key_call_counts,
+                }
 
-            turn_log = []  # ordered {"type": "text"|"action", ...} entries for this HTTP call
-            iterations = 0
+                turn_log = []  # ordered {"type": "text"|"action", ...} entries for this HTTP call
+                iterations = 0
 
-            while iterations < MAX_AUTO_CONTINUE:
-                iterations += 1
+                while iterations < MAX_AUTO_CONTINUE:
+                    iterations += 1
 
-                try:
-                    bubble_result = bubble.assemble_bubble(
-                        CONTEXT_DIR, CONFIG_DIR, user_msg,
-                        turn=self.turn_count + 1, cooldown_state=self.trigger_cooldowns,
-                        cwd=ctx["_cwd"], env_file_path=self.config.get("env_file_path", ""),
+                    try:
+                        bubble_result = bubble.assemble_bubble(
+                            CONTEXT_DIR, CONFIG_DIR, user_msg,
+                            turn=self.turn_count + 1, cooldown_state=self.trigger_cooldowns,
+                            cwd=ctx["_cwd"],
+                            env_file_paths=[str(p) for p in newagent_env.resolve_env_bejson_sources(self.config)],
+                        )
+                    except errors.ContextInjectionError:
+                        bubble_result = bubble.build_minimal_bubble(CONTEXT_DIR, CONFIG_DIR)
+
+                    system_instruction = actions.build_system_prompt(
+                        ctx["_cwd"], bubble_result["text"],
+                        active_job=jobs.build_job_context_block(ctx.get("_active_job_doc")),
                     )
-                except errors.ContextInjectionError:
-                    bubble_result = bubble.build_minimal_bubble(CONTEXT_DIR, CONFIG_DIR)
 
-                system_instruction = actions.build_system_prompt(
-                    ctx["_cwd"], bubble_result["text"],
-                    active_job=jobs.build_job_context_block(ctx.get("_active_job_doc")),
-                )
+                    try:
+                        response_text, usage = self.rest_prompter.prompt(self.history, system_instruction)
+                    except errors.NewAgentFatalError as exc:
+                        return jsonify({"error": f"[FATAL] {exc}", "turn_log": turn_log}), 500
+                    except Exception as exc:
+                        return jsonify({"error": str(exc), "turn_log": turn_log}), 502
 
-                try:
-                    response_text, usage = self.rest_prompter.prompt(self.history, system_instruction)
-                except errors.NewAgentFatalError as exc:
-                    return jsonify({"error": f"[FATAL] {exc}", "turn_log": turn_log}), 500
-                except Exception as exc:
-                    return jsonify({"error": str(exc), "turn_log": turn_log}), 502
+                    self.turn_count += 1
+                    self.stats.turns += 1
+                    self.history.append({"role": "model", "content": response_text, "_ts": ts})
+                    turn_log.append({"type": "text", "content": response_text})
 
-                self.turn_count += 1
-                self.stats.turns += 1
-                self.history.append({"role": "model", "content": response_text, "_ts": ts})
-                turn_log.append({"type": "text", "content": response_text})
+                    parsed_actions = actions.parse_actions(response_text)
+                    if not parsed_actions:
+                        break  # turn genuinely complete -- model didn't request any actions
 
-                parsed_actions = actions.parse_actions(response_text)
-                if not parsed_actions:
-                    break  # turn genuinely complete -- model didn't request any actions
+                    results = run_async(actions.run_action_queue(parsed_actions, ctx))
+                    self._active_job_path = ctx.get("_active_job_path")
+                    self._active_job_doc = ctx.get("_active_job_doc")
+                    for r in results:
+                        turn_log.append({
+                            "type": "action",
+                            "action_type": r.action_type,
+                            "source": r.source,
+                            "output": r.output,
+                            "exit_code": r.exit_code,
+                        })
 
-                results = asyncio.run(actions.run_action_queue(parsed_actions, ctx))
-                self._active_job_path = ctx.get("_active_job_path")
-                self._active_job_doc = ctx.get("_active_job_doc")
-                for r in results:
-                    turn_log.append({
-                        "type": "action",
-                        "action_type": r.action_type,
-                        "source": r.source,
-                        "output": r.output,
-                        "exit_code": r.exit_code,
-                    })
+                    payload = actions.assemble_results_payload(results)
+                    self.history.append({"role": "user", "content": payload, "_ts": ts})
 
-                payload = actions.assemble_results_payload(results)
-                self.history.append({"role": "user", "content": payload, "_ts": ts})
+                    if not self.config.get("auto_continue_enabled", True):
+                        break  # one action round only -- human sends again to continue
 
-                if not self.config.get("auto_continue_enabled", True):
-                    break  # one action round only -- human sends again to continue
+                # Sync cwd/shell_env back from ctx -- an <exec> tag may have
+                # changed them, and /api/exec's raw shell should see the same
+                # state the agent just left things in, and vice versa.
+                self._cwd = ctx["_cwd"]
+                if ctx.get("_shell_env") is not None:
+                    self._shell_env = ctx["_shell_env"]
 
-            # Sync cwd/shell_env back from ctx -- an <exec> tag may have
-            # changed them, and /api/exec's raw shell should see the same
-            # state the agent just left things in, and vice versa.
-            self._cwd = ctx["_cwd"]
-            if ctx.get("_shell_env") is not None:
-                self._shell_env = ctx["_shell_env"]
+                # FIX (2026-08-27, audit F-11): enforce max_history_turns here,
+                # once the whole turn (including any multi-round tool-call
+                # loop above) is complete -- not inside the while loop, where
+                # trimming mid-sequence could cut context a follow-up tool
+                # round still needs.
+                bubble.trim_history(self.history, self.config.get("max_history_turns", 20))
 
-            return jsonify({
-                "turn_log": turn_log,
-                "cwd": self._cwd,
-                "iterations": iterations,
-                "hit_iteration_cap": iterations >= MAX_AUTO_CONTINUE,
-            })
+                return jsonify({
+                    "turn_log": turn_log,
+                    "cwd": self._cwd,
+                    "iterations": iterations,
+                    "hit_iteration_cap": iterations >= MAX_AUTO_CONTINUE,
+                })
 
         @app.route("/api/models", methods=["GET"])
         def api_models_get():
@@ -2207,7 +2463,15 @@ class WebAgentTerminal:
         # here to justify Field Map Cache overhead for one text blob.
         @app.route("/api/notes", methods=["GET"])
         def api_notes_get():
-            text = NOTES_FILE.read_text(encoding="utf-8") if NOTES_FILE.is_file() else ""
+            # FIX (2026-08-29, audit F-27): the write path already had
+            # atomic temp-then-replace protection; the read path had none
+            # -- a permissions error, encoding corruption, or filesystem
+            # hiccup on an existing file raised straight through to a 500
+            # with a stack trace instead of a clean, informative response.
+            try:
+                text = NOTES_FILE.read_text(encoding="utf-8") if NOTES_FILE.is_file() else ""
+            except OSError as e:
+                return jsonify({"text": "", "error": f"Could not read notes file: {e}"}), 500
             return jsonify({"text": text})
 
         @app.route("/api/notes", methods=["POST"])

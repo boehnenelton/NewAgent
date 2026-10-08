@@ -12,7 +12,7 @@
     },
     {
       "name": "setting_value",
-      "type": "any"
+      "type": "string"
     },
     {
       "name": "description",
@@ -27,13 +27,13 @@
     ],
     [
       "model_rest",
-      "gemini-2.5-flash",
-      "Model for REST generateContent engine"
+      "gemini-3.6-flash",
+      "NOT currently read anywhere at runtime -- see docs/dead_code.md. Kept for reference/future use; the real active model is config/models.bejson via ModelRegistry."
     ],
     [
       "model_interactions",
-      "gemini-2.5-flash",
-      "Model for Interactions API engine"
+      "gemini-3.6-flash",
+      "NOT currently read anywhere at runtime -- see docs/dead_code.md. Kept for reference/future use; the real active model is config/models.bejson via ModelRegistry."
     ],
     [
       "key_registry_path",
@@ -53,7 +53,7 @@
     [
       "env_file_path",
       "/storage/emulated/0/env_file.json",
-      "GlobalEnv BEJSON file synced for API keys on startup"
+      "LEGACY fallback GlobalEnv BEJSON file -- only used when neither env_secure_file_path nor env_paths_file_path exists on disk"
     ],
     [
       "log_level",
@@ -62,82 +62,82 @@
     ],
     [
       "send_delay_seconds",
-      2.0,
+      "2.0",
       "Delay before each API request (seconds)"
     ],
     [
       "max_history_turns",
-      20,
+      "20",
       "Max conversation turns kept in memory"
     ],
     [
       "history_panel_rows",
-      6,
+      "6",
       "Rows shown in TUI history panel"
     ],
     [
       "max_actions_per_turn",
-      10,
+      "10",
       "Max action tags executed per model response"
     ],
     [
       "auto_continue_enabled",
-      true,
+      "true",
       "Auto-feed action results back to model"
     ],
     [
       "max_autonomy_turns",
-      20,
+      "20",
       "Max consecutive autonomous turns (0=unlimited)"
     ],
     [
       "exec_timeout_seconds",
-      60,
+      "60",
       "Max seconds per shell command"
     ],
     [
       "exec_denylist",
-      [
-        "rm -rf /",
-        "dd if=",
-        "mkfs",
-        ":(){:|:&};:"
-      ],
-      "Command prefixes blocked before execution"
+      "[\"rm -rf /\", \"dd if=\", \"mkfs\", \":(){:|:&};:\"]",
+      "Commands blocked if any of these strings appears anywhere in them (2026-08-25: was 'prefixes blocked before execution' when the check was startswith-only -- audit F-03 found that trivially bypassed by e.g. 'echo hi && rm -rf /'; the check itself lives in lib_bejson_newagent_actions.is_command_denylisted() and is substring-anywhere now, this description is just kept accurate to match)"
+    ],
+    [
+      "web_auth_token",
+      "",
+      "Shared-secret token webagent.py requires on every request (X-Auth-Token header or ?token= query param). Auto-generated and saved here on first run if empty -- see webagent.py's WebAgentTerminal.__init__ (audit F-02). Blanked 2026-09-11 (audit V106-05): the previous value was a live, working token shipped in-package on export. Rotate the on-device copy separately -- blanking this exported copy alone does not invalidate a token already in active use on the device."
     ],
     [
       "dryrun_mode",
-      false,
+      "false",
       "When true: actions shown but not executed"
     ],
     [
       "confirmation_gate",
-      false,
+      "false",
       "Pause for Y/n before exec/delete actions"
     ],
     [
       "input_mode",
-      0,
+      "0",
       "0=typed 1=STT 2=dialog+snippets"
     ],
     [
       "multi_line_mode",
-      false,
+      "false",
       "Triple-Enter for multi-line typed input"
     ],
     [
       "live_feed_output",
-      false,
+      "false",
       "Stream exec stdout/stderr live"
     ],
     [
       "speak_output_enabled",
-      true,
+      "true",
       "Print <speak> text to terminal"
     ],
     [
       "interactions_max_rounds",
-      10,
+      "10",
       "Max function-call rounds per Interactions turn"
     ],
     [
@@ -152,27 +152,27 @@
     ],
     [
       "gen_temperature",
-      0.7,
+      "0.7",
       "Baseline generationConfig.temperature (legacy-profile models only)"
     ],
     [
       "gen_top_p",
-      0.95,
+      "0.95",
       "Baseline generationConfig.topP (legacy-profile models only)"
     ],
     [
       "gen_top_k",
-      40,
+      "40",
       "Baseline generationConfig.topK (legacy-profile models only)"
     ],
     [
       "gen_candidate_count",
-      1,
+      "1",
       "Baseline generationConfig.candidateCount (legacy-profile models only)"
     ],
     [
       "gen_thinking_budget",
-      -1,
+      "-1",
       "Baseline thinkingConfig.thinkingBudget (legacy-profile models; -1 = dynamic)"
     ],
     [
@@ -182,28 +182,43 @@
     ],
     [
       "debug_mode",
-      true,
+      "true",
       "When true: write raw REST API request/response pairs to logs/raw_api_debug_*.json and logs/raw_api_error_*.json (rotated, last 5 kept). Defaults True: this being off is why the HTTP 400 issue went undiagnosed through two prior fix attempts."
     ],
     [
       "health_check_on_startup",
-      true,
+      "true",
       "When true: fire one minimal REST API call at startup so a bad key/model surfaces immediately instead of mid-conversation"
     ],
     [
       "network_error_auto_retry",
-      true,
+      "true",
       "When true: a NETWORK ERROR (dropped connection, no route) auto-resends the same turn instead of waiting for the user to manually retype it"
     ],
     [
       "network_error_retry_backoff_seconds",
-      3.0,
+      "3.0",
       "Delay before an auto-resend triggered by network_error_auto_retry"
     ],
     [
       "auto_amnesia_memory_retrieval",
-      true,
+      "true",
       "When true, /amnesia (agent.py) or the webagent Amnesia button immediately re-feeds the compressed recap back into history ('rebirth') as soon as it wipes memory. When false, /amnesia wipes to a true blank slate and the recap waits on disk until /rebirth is run manually."
+    ],
+    [
+      "env_secure_file_path",
+      "/storage/emulated/0/.env/secure/secureenv_file.json",
+      "PRIMARY env source (1 of 2): secure/credential vars (API keys etc). See env_templates/ for the blank schema."
+    ],
+    [
+      "env_paths_file_path",
+      "/storage/emulated/0/.env/user/paths.json",
+      "PRIMARY env source (2 of 2): non-sensitive vars (paths, IDs, model names). See env_templates/ for the blank schema."
+    ],
+    [
+      "subagents_enabled",
+      "false",
+      "Master switch for the sub-agent system (lib_bejson_newagent_subagent_*.py). When false (the default -- new/experimental feature), dispatch_subagent()/run_subagent_turn()/resume_subagent() all refuse immediately with status='disabled' and create/mutate nothing on disk; existing subagent session/signal/profile files are left untouched either way. Flip to true to allow the main agent (or any tool built on top of it) to actually dispatch sub-agent sessions."
     ]
   ]
 }

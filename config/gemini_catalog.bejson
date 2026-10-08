@@ -37,6 +37,10 @@
     {
       "name": "provider",
       "type": "string"
+    },
+    {
+      "name": "key_valid_through",
+      "type": "string"
     }
   ],
   "Values": [
@@ -48,7 +52,8 @@
       "GA",
       "Prior default; balanced multimodal workhorse.",
       "legacy",
-      "gemini"
+      "gemini",
+      ""
     ],
     [
       2,
@@ -58,7 +63,8 @@
       "GA",
       "Cheapest tier, $0.10/$0.40 per 1M tokens.",
       "legacy",
-      "gemini"
+      "gemini",
+      ""
     ],
     [
       3,
@@ -68,7 +74,8 @@
       "GA",
       "Prior-gen flagship, deep reasoning and coding.",
       "legacy",
-      "gemini"
+      "gemini",
+      ""
     ],
     [
       4,
@@ -78,7 +85,8 @@
       "GA",
       "Feb 2026 flagship; strongest pure reasoning (GPQA, SWE-bench).",
       "legacy",
-      "gemini"
+      "gemini",
+      ""
     ],
     [
       5,
@@ -88,7 +96,8 @@
       "GA",
       "Replacement for the shut-down 2.0 Flash-Lite.",
       "legacy",
-      "gemini"
+      "gemini",
+      ""
     ],
     [
       6,
@@ -98,7 +107,8 @@
       "GA",
       "May 2026 GA; near-Pro agentic performance.",
       "legacy",
-      "gemini"
+      "gemini",
+      ""
     ],
     [
       7,
@@ -108,7 +118,8 @@
       "GA",
       "Added 2026-07-22 (released 2026-07-21). Fastest/cheapest 3.x tier, 350 tok/s, $0.30/$2.50 per 1M. Gemini 3.x request rules apply: thinking_level replaces thinking_budget; no temperature/top_p/top_k/candidate_count.",
       "v3",
-      "gemini"
+      "gemini",
+      ""
     ],
     [
       8,
@@ -118,7 +129,8 @@
       "GA",
       "Added 2026-07-22 (released 2026-07-21). Successor to 3.5 Flash, 17% fewer output tokens, $1.50/$7.50 per 1M. Same Gemini 3.x request rules as row 7.",
       "v3",
-      "gemini"
+      "gemini",
+      ""
     ],
     [
       9,
@@ -128,7 +140,8 @@
       "beta",
       "OpenAI-compatible beta host, 262k context, thinking off by default. 1,000,000 free tokens for first 100 users, key valid through 2026-08-27.",
       "legacy",
-      "provocative"
+      "provocative",
+      "2026-08-27"
     ]
   ]
 }

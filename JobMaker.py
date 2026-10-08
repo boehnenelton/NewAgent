@@ -18,6 +18,7 @@ RELATIONAL_ID:  d4a1f8c2-9b3e-4d6a-8f0c-2e5b7a9c1d43
 """
 
 import re
+import secrets
 import sys
 import uuid
 from datetime import datetime
@@ -25,10 +26,11 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, Response
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 BASE_DIR = Path(__file__).resolve().parent
 JOBS_DIR = BASE_DIR / "jobs"
+CONFIG_PATH = BASE_DIR / "config" / "config.json"
 
 # Reuse the same Core BEJSON library the rest of NewAgent uses -- no second
 # read/write/field-map implementation.
@@ -38,8 +40,38 @@ from lib_bejson_Core_bejson_core import (
     bejson_core_atomic_write,
     bejson_core_get_field_map,
 )
+import lib_bejson_newagent_config as config_lib
 
 app = Flask(__name__)
+
+# FIX (2026-09-11, audit V106-01): this server used to bind 0.0.0.0 with
+# zero auth of any kind -- no token, no before_request guard -- while
+# exposing a live unauthenticated write endpoint (POST /api/jobs) to
+# every device on the network. Same finding class as webagent.py's F-02;
+# mirrors that fix exactly, including reusing the same shared web_auth_token
+# field in config/config.json (shared config file, not a separate one --
+# same token both apps already print/generate is one fewer secret to track).
+# FIX (2026-09-11, audit remediation Part 1 §3 "Token Generation Race"):
+# this used to be an inline "if empty, generate + save" check identical
+# to webagent.py's own (now-fixed) copy -- if both processes booted
+# against a fresh config.json at the same moment, each could
+# independently generate its own token and the last atomic_write to land
+# would silently win, leaving the other process rejecting every request
+# with a token that no longer matched disk. get_or_create_web_auth_token()
+# (lib_bejson_newagent_config.py 1.14.0) closes that with a lock file
+# shared by both call sites -- same config.json, same lock.
+_config = config_lib.init_config(CONFIG_PATH)
+_web_token = config_lib.get_or_create_web_auth_token(CONFIG_PATH, _config)
+
+
+@app.before_request
+def _require_auth_token():
+    # Constant-time compare (secrets.compare_digest) so response timing
+    # can't be used to guess the token character-by-character. Gates every
+    # route, including "/" itself, not just /api/*.
+    supplied = request.headers.get("X-Auth-Token") or request.args.get("token") or ""
+    if not secrets.compare_digest(supplied, _web_token):
+        return jsonify({"error": "Unauthorized -- missing or incorrect auth token."}), 401
 
 _JOB_FIELDS = [
     {"name": "task_id", "type": "string"},
@@ -398,4 +430,6 @@ def index():
 if __name__ == "__main__":
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     print(f"JobMaker v{VERSION} -- Elton Boehnen -- serving jobs/ at {JOBS_DIR}")
-    app.run(host="0.0.0.0", port=5055, debug=False)
+    print(f"[JobMaker] Auth token (send as X-Auth-Token header or ?token= param): {_web_token}")
+    print(f"[JobMaker] Listening on 127.0.0.1:5055 -- change host explicitly if you need this reachable beyond localhost, and understand what that exposes before you do.")
+    app.run(host="127.0.0.1", port=5055, debug=False)

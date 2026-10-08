@@ -46,62 +46,62 @@
       900
     ],
     [
-      "html",
+      "behtml",
       "kb://behtml_1",
       600
     ],
     [
-      "html",
+      "behtml",
       "kb://behtml_2",
       600
     ],
     [
-      "html",
+      "behtml",
       "kb://behtml_3",
       600
     ],
     [
-      "html",
+      "behtml",
       "kb://behtml_4",
       600
     ],
     [
-      "html",
+      "behtml",
       "kb://behtml_5",
       600
     ],
     [
-      "html",
+      "behtml",
       "kb://behtml_6",
       600
     ],
     [
-      "html",
+      "behtml",
       "kb://behtml_7",
       600
     ],
     [
-      "html",
+      "behtml",
       "kb://behtml_8",
       600
     ],
     [
-      "html",
+      "behtml",
       "kb://behtml_9",
       600
     ],
     [
-      "html",
+      "behtml",
       "kb://behtml_10",
       600
     ],
     [
-      "html",
+      "behtml",
       "kb://behtml_11",
       600
     ],
     [
-      "html",
+      "behtml",
       "kb://behtml_12",
       600
     ],
@@ -133,6 +133,231 @@
     [
       "book writer",
       "kb://bookwriter_6",
+      900
+    ],
+    [
+      "bejson",
+      "kb://bejson_core_1",
+      900
+    ],
+    [
+      "bejson",
+      "kb://bejson_core_2",
+      900
+    ],
+    [
+      "bejson",
+      "kb://bejson_core_3",
+      900
+    ],
+    [
+      "bejson",
+      "kb://bejson_core_4",
+      900
+    ],
+    [
+      "bejson",
+      "kb://bejson_core_5",
+      900
+    ],
+    [
+      "bejson",
+      "kb://bejson_core_6",
+      900
+    ],
+    [
+      "bejson",
+      "kb://bejson_core_7",
+      900
+    ],
+    [
+      "bejson",
+      "kb://bejson_core_8",
+      900
+    ],
+    [
+      "104",
+      "kb://bejson_core_2",
+      900
+    ],
+    [
+      "104a",
+      "kb://bejson_core_3",
+      900
+    ],
+    [
+      "104db",
+      "kb://bejson_core_4",
+      900
+    ],
+    [
+      "mfdb",
+      "kb://bejson_core_5",
+      900
+    ],
+    [
+      "mfdb",
+      "kb://bejson_core_6",
+      900
+    ],
+    [
+      "mfdb",
+      "kb://bejson_core_7",
+      900
+    ],
+    [
+      "nested bejson",
+      "kb://nested_1",
+      900
+    ],
+    [
+      "104 nesting",
+      "kb://nested_1",
+      900
+    ],
+    [
+      "diagrams",
+      "kb://diagrams_1",
+      900
+    ],
+    [
+      "diagrams",
+      "kb://diagrams_2",
+      900
+    ],
+    [
+      "behtml library",
+      "kb://behtml_lib_1",
+      900
+    ],
+    [
+      "behtml library",
+      "kb://behtml_lib_2",
+      900
+    ],
+    [
+      "behtml core",
+      "kb://behtml_lib_1",
+      900
+    ],
+    [
+      "behtml validator",
+      "kb://behtml_lib_2",
+      900
+    ],
+    [
+      "mfdb",
+      "kb://bejson_core_9",
+      900
+    ],
+    [
+      "z layer",
+      "kb://behtml_13",
+      600
+    ],
+    [
+      "z_layer",
+      "kb://behtml_13",
+      600
+    ],
+    [
+      "behtml layer",
+      "kb://behtml_13",
+      600
+    ],
+    [
+      "behtml",
+      "kb://behtml_13",
+      600
+    ],
+    [
+      "mfdb-132",
+      "kb://mfdb132_1",
+      900
+    ],
+    [
+      "mfdb132",
+      "kb://mfdb132_1",
+      900
+    ],
+    [
+      "chunked-104a",
+      "kb://mfdb132_1",
+      900
+    ],
+    [
+      "mfdb",
+      "kb://mfdb132_1",
+      900
+    ],
+    [
+      "field map",
+      "kb://field_map_1",
+      900
+    ],
+    [
+      "field_map",
+      "kb://field_map_1",
+      900
+    ],
+    [
+      "positional integrity",
+      "kb://field_map_1",
+      900
+    ],
+    [
+      "bejson",
+      "kb://field_map_1",
+      900
+    ],
+    [
+      "core library",
+      "kb://core_lib_1",
+      900
+    ],
+    [
+      "core family",
+      "kb://core_lib_1",
+      900
+    ],
+    [
+      "lib folder",
+      "kb://core_lib_2",
+      900
+    ],
+    [
+      "bootstrap",
+      "kb://core_lib_2",
+      900
+    ],
+    [
+      "tools_lib",
+      "kb://core_lib_2",
+      900
+    ],
+    [
+      "my environment",
+      "kb://environment_1",
+      900
+    ],
+    [
+      "my setup",
+      "kb://environment_1",
+      900
+    ],
+    [
+      "my device",
+      "kb://environment_1",
+      900
+    ],
+    [
+      "termux",
+      "kb://environment_1",
+      900
+    ],
+    [
+      "pydroid",
+      "kb://environment_1",
       900
     ]
   ]

@@ -2,12 +2,20 @@
 Library:        lib_bejson_newagent_commands.py
 Family:         NewAgent
 Description:    TUI slash command handler and helper displays.
-Version:        1.17.0
-Date:           2026-08-09
+Version:        1.18.0
+Date:           2026-08-18
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  7a9c1e3f-4b6d-4e8f-9a1c-3e5b7d9f1a58
+RELATIONAL_ID:  e5a8c2f6-9d4b-4a1e-8c6f-3b7d5a9e1c40
 
 CHANGELOG:
+- 1.18.0 (2026-08-18): Added /logs2md -- Logging System rework (Elton's
+  request: "make the user type a command to convert the logs to markdown").
+  No arg converts the current live session (ctx["_logger"].log_path); an
+  arg resolves as a path (relative to cwd if not absolute) to any other
+  session_*.bejson, including an already-archived one. Thin wrapper around
+  lib_bejson_newagent_session.convert_session_to_markdown(), which also
+  zips the result with a conversion timestamp. Verified both the no-arg
+  and explicit-path forms end-to-end.
 - 1.17.0 (2026-08-09): Renamed /compress to /amnesia and split it per
   Elton's follow-up: compression + wipe is unconditional whenever
   /amnesia runs, but feeding the recap straight back into memory
@@ -61,7 +69,7 @@ import lib_bejson_newagent_context_bubble as context_bubble
 import lib_bejson_newagent_engine_rest as rest
 import lib_bejson_newagent_jobs as jobs_lib
 
-VERSION = "1.17.0"
+VERSION = "1.18.0"
 
 HELP_COMMANDS: list[tuple[str, str]] = [
     ("/help", "Show this help reference"),
@@ -94,6 +102,7 @@ HELP_COMMANDS: list[tuple[str, str]] = [
     ("/checkpoints", "List saved named rollback checkpoints"),
     ("/rollback <lbl>", "Rollback all files in checkpoint to prior state"),
     ("/ctxlog [n]", "View the context bubble sent with a past turn (Context Button)"),
+    ("/logs2md [path]", "Convert a session log to Markdown + a timestamped zip (no arg = current session; no more automatic .md generation)"),
     ("/observer", "Toggle Part 4 context compression on/off"),
     ("/init", "Scaffold an empty context.bejson in the current directory"),
     ("/budget [name val]", "View or set context budget (max tokens, category percentages)"),
@@ -329,6 +338,15 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
 
         if not arg:
             lines = [f"{C.RED_B}Gemini Model Catalog:{C.RESET}"]
+            # FIX (2026-08-31, audit F-46): surfaces here since /model is
+            # the one place a person actually looks at this catalog --
+            # see check_catalog_key_expiry()'s own docstring for the full
+            # reasoning.
+            expiry_warnings = rest.check_catalog_key_expiry(catalog)
+            for w in expiry_warnings:
+                lines.append(f"{C.RED_B}!! {w}{C.RESET}")
+            if expiry_warnings:
+                lines.append("")
             for row in catalog:
                 marker = " *" if row.get("model_string") == model_reg.active else "  "
                 lines.append(
@@ -437,6 +455,19 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
             lines.append(f"{C.WHITE_DIM}--- bubble content ---{C.RESET}")
             lines.append(entry["bubble_content"])
         return True, "\n".join(lines)
+
+    elif cmd == "/logs2md":
+        # Elton's Logging System request: no more automatic markdown
+        # generation on every log() call -- this is now the only way a
+        # .md gets produced, paired with a timestamped zip of the result.
+        if arg.strip():
+            target = Path(arg.strip()).expanduser()
+            if not target.is_absolute():
+                target = Path(ctx["_cwd"]) / target
+        else:
+            target = ctx["_logger"].log_path  # current live session's transcript
+        ok, msg = session_lib.convert_session_to_markdown(target)
+        return True, msg
 
     elif cmd == "/observer":
         constants = context_bubble.load_constants(ctx["_config_dir"])

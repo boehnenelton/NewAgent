@@ -1,0 +1,178 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "SkeletonRegistry"
+  ],
+  "Fields": [
+    {
+      "name": "registry_uuid",
+      "type": "string"
+    },
+    {
+      "name": "skeleton_theme",
+      "type": "string"
+    },
+    {
+      "name": "skeleton_name",
+      "type": "string"
+    },
+    {
+      "name": "skeleton_path",
+      "type": "string"
+    },
+    {
+      "name": "skeleton_status",
+      "type": "string"
+    },
+    {
+      "name": "skeleton_version",
+      "type": "integer"
+    },
+    {
+      "name": "required_tags",
+      "type": "array"
+    },
+    {
+      "name": "content_checksum",
+      "type": "string"
+    },
+    {
+      "name": "last_promoted_at",
+      "type": "string"
+    },
+    {
+      "name": "wired_up",
+      "type": "boolean"
+    }
+  ],
+  "Values": [
+    [
+      "reg_default_app_skeleton",
+      "default",
+      "App_Skeleton",
+      "default/App_Skeleton.html",
+      "live",
+      1,
+      [
+        "app_name",
+        "app_source_code",
+        "category",
+        "doc_body",
+        "related_content_section",
+        "timestamp"
+      ],
+      "164dcefc801227227d02492d017b8b2680e8ed26c22cb001360cd48a509f2174",
+      "",
+      false
+    ],
+    [
+      "reg_default_apps_feed_skeleton",
+      "default",
+      "Apps_Feed_Skeleton",
+      "default/Apps_Feed_Skeleton.html",
+      "live",
+      1,
+      [
+        "content_grid"
+      ],
+      "8bb678f1ea64574bff230c076c12c9ec569d97a6ac2f6bbc3993dab47dd70079",
+      "",
+      true
+    ],
+    [
+      "reg_default_article_skeleton",
+      "default",
+      "Article_Skeleton",
+      "default/Article_Skeleton.html",
+      "live",
+      1,
+      [
+        "article_body",
+        "article_title",
+        "category",
+        "featured_image_html",
+        "related_content_section",
+        "timestamp"
+      ],
+      "3338241b429b338f5bfac40c0f5ebb30a80cf6724279cd1715d955183c34aee9",
+      "",
+      true
+    ],
+    [
+      "reg_default_author_skeleton",
+      "default",
+      "Author_Skeleton",
+      "default/Author_Skeleton.html",
+      "live",
+      1,
+      [
+        "author_bio",
+        "author_img_html",
+        "author_name",
+        "content_grid"
+      ],
+      "5b8d1739f34b44947ab651bc1031877d45a9f4f481ac460fbea7b139feefe6ee",
+      "",
+      false
+    ],
+    [
+      "reg_default_category_skeleton",
+      "default",
+      "Category_Skeleton",
+      "default/Category_Skeleton.html",
+      "live",
+      1,
+      [
+        "category_description",
+        "category_name",
+        "content_grid"
+      ],
+      "baeefb3659d091f117741e9ebaf0ed856595d30a5501e7d09eaff9fcbb0473f1",
+      "",
+      true
+    ],
+    [
+      "reg_default_global_skeleton",
+      "default",
+      "Global_Skeleton",
+      "default/Global_Skeleton.html",
+      "live",
+      1,
+      [
+        "current_url",
+        "current_year",
+        "custom_nav_links",
+        "main_content_injection",
+        "page_title",
+        "rel_prefix",
+        "seo_author",
+        "seo_description",
+        "seo_image",
+        "sidebar_categories",
+        "site_title",
+        "social_media_links"
+      ],
+      "a840bbb81ea21a60eaef6170d51c2ddf8030e3d89de5fb95815d9fc8d68ec78c",
+      "",
+      true
+    ],
+    [
+      "reg_default_home_skeleton",
+      "default",
+      "Home_Skeleton",
+      "default/Home_Skeleton.html",
+      "live",
+      1,
+      [
+        "content_grid",
+        "site_description",
+        "site_title"
+      ],
+      "aed96d22882de0b8fd2371c899b576b1083f02c7201cea79b1994a4fa7babbea",
+      "2026-08-24T08:36:19.407166+00:00",
+      true
+    ]
+  ]
+}

@@ -14,3 +14,8 @@ NewAgent.zip
 chunked5/
 backups/
 Context/Context_Bubble.md
+log/
+__pycache__/
+*.pyc
+*.tmp
+.DS_Store

@@ -1,0 +1,20 @@
+<article>
+    <header class="article-header" data-behtml-y="0" data-behtml-x="0..7">
+        <span class="article-meta">Application</span>
+        <h1 class="article-title">{{app_name}}</h1>
+        <p style="color:#555;">{{category}} &bull; {{timestamp}}</p>
+    </header>
+    <div class="article-body">
+        <div class="source-code-block">
+            <h3>Source Code</h3>
+            <textarea readonly>{{app_source_code}}</textarea>
+            <div class="behtml-control" style="margin-top: 12px;">
+                <button class="behtml-control__button behtml-control__button--accent" onclick="navigator.clipboard.writeText(this.closest('.source-code-block').querySelector('textarea').value)">Copy Source</button>
+            </div>
+        </div>
+        <h3 class="section-heading">Documentation</h3>
+        <div>{{doc_body}}</div>
+    </div>
+    
+    {{related_content_section}}
+</article>

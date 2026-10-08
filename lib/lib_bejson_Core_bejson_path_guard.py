@@ -2,8 +2,17 @@
 Library:        lib_bejson_Core_bejson_path_guard.py
 Family:         Core
 Description:    Secure path resolver and boundary protection logic.
-Version:        1.1.0
-Date:           2026-08-07
+Version:        1.3.0
+Date:           2026-08-24
+CHANGE (2026-08-24): Ported safe_extract_zip() forward from NA-CMS's
+private src/lib copy (v1.2.0 there), which had grown this function
+independently while this shared copy was getting the sibling-directory
+fix below -- the two copies had diverged in different directions.
+Consolidated during the shared-lib/ vs tools_lib/ reroute (NA-CMS no
+longer keeps its own copy of this file at all); caught by an actual
+import smoke test failing on this exact missing name, not by inspection.
+Also fixed a pre-existing Version-string mismatch: this header said
+1.1.0 while the trailing VERSION variable said 1.2.0 -- now consistent.
 CHANGE (2026-08-07): Fixed a sibling-directory bypass in bejson_safe_join()
 (found while fixing LIB-CH-H1, which delegates to this same helper). The
 `str(target_path).startswith(str(base_path))` check is a raw string
@@ -13,7 +22,7 @@ similarly-named sibling. Replaced with Path.is_relative_to() (falls
 back to a manual parents walk on Python <3.9, though policy floors at
 3.10 so that branch is defensive only), which requires an exact
 directory-boundary match, not a string prefix.
-RELATIONAL_ID:  31305b9a-7172-4600-b45e-50355ec0b1c5
+RELATIONAL_ID:  7b3e9c1a-4f6d-4e2a-8c5b-1a9f6e3d7b2c
 """
 
 import os
@@ -92,4 +101,25 @@ def _bejson_mfdb_escapes_root(relative_path: str) -> bool:
     return False
 
 
-VERSION = "1.2.0"
+def safe_extract_zip(zf, dest_dir: str) -> None:
+    """
+    Extract every member of an open ZipFile into dest_dir, rejecting the
+    whole archive if any member's name would resolve outside dest_dir
+    (zip-slip: '../' segments, absolute paths, or symlink-style tricks
+    encoded in the name). zipfile.ZipFile.extractall() does NOT do this
+    check itself -- member names are used as-is to build the destination
+    path, so a crafted archive can write anywhere the process can reach.
+    Raises ValueError on the first unsafe member found, before extracting
+    anything, so a malicious zip is rejected atomically rather than
+    partially extracted. Uses bejson_safe_join()'s sibling-directory-safe
+    boundary check (v1.1.0+) rather than a raw prefix test.
+    """
+    dest_path = Path(dest_dir).resolve()
+    for member in zf.infolist():
+        # bejson_safe_join raises ValueError itself if the resolved path
+        # escapes dest_dir -- let that propagate to the caller.
+        bejson_safe_join(str(dest_path), member.filename)
+    zf.extractall(dest_dir)
+
+
+VERSION = "1.3.0"

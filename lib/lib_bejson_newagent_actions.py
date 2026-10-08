@@ -2,13 +2,78 @@
 Library:        lib_bejson_newagent_actions.py
 Family:         NewAgent
 Description:    Model action execution tools, XML tag parser, action queue dispatcher, and TaskManager.
-Version:        2.1.0
-Date:           2026-08-08
+Version:        2.5.0
+Date:           2026-10-01
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  4c1a7e9d-2b3f-4a5e-9d6c-7f8e0a1b2c3d
+RELATIONAL_ID:  2d8964b0-e953-44c6-830b-0a5a2429528d
 
 CHANGELOG:
-- 2.1.0 (2026-08-08): Added the Job Creation System's <job_task_done id="..."/>
+- 2.5.0 (2026-10-01): CRITICAL field bug, caught from Elton's own uploaded
+  session logs (session_2026-09-30_19-06-34.*) after a `search_text
+  bookwriter` call returned 1,954,412 bytes. do_search_text() shelled out
+  to ripgrep with NO output cap and NO exclusions at all -- the match
+  recursed into logs/ (archived session transcripts, themselves full of
+  nested escaped JSON from prior sessions), exploding a single common
+  word into ~2MB that got fed straight into the next turn's context AND
+  persisted into the session's own logs, which is why the uploaded log
+  files were themselves ~2MB after only 2 turns. Added -g exclusions for
+  logs/, backups/, .git/, __pycache__/, node_modules/, plus a 64KB output
+  cap (new _cap_subprocess_output(), matching the cap do_http_get and
+  do_read_file already had -- do_search_text/do_find_files/do_fuzzy_find
+  were the only three subprocess-backed actions missing one). Found and
+  fixed a SECOND bug verifying the first: the -g exclusion globs didn't
+  actually work -- ripgrep anchors a relative glob ("logs/**") to the
+  search-root ARGUMENT's own relative structure, and the code passed an
+  absolute resolved path with no cwd= set, so the glob never anchored to
+  anything. Confirmed directly: `rg -g '!logs/**' pat /abs/path` still
+  matches inside /abs/path/logs/, while running with cwd=/abs/path and
+  searching "." correctly excludes it. Fixed by setting cwd= to the
+  search root (or its parent, when path names a single file) and
+  searching a relative target. do_find_files and do_fuzzy_find also
+  capped for consistency (same missing-cap class of bug, lower blast
+  radius). (Note: this file's own header Version/changelog had drifted
+  behind the live VERSION constant, which was already at 2.4.0 with no
+  corresponding changelog entry here -- realigned going forward; did not
+  guess at or backfill what that untracked 2.3.1->2.4.0 change was.)
+  Verified: real ripgrep installed and run (not mocked) against a
+  reproduction of the field scenario (huge file under logs/ + a real
+  source-file match) -- logs/ correctly excluded, real match returned,
+  cap applies to oversized legitimate matches too; py_compile clean.
+- 2.3.1 (2026-08-20): tools/init/Cli_Init.py renamed to CLI_Init.py, per
+  Elton's tools/ naming pass -- updated the context_set tag's example
+  reference in the system-prompt text to match. No functional change.
+- 2.3.0 (2026-08-17): INIT -- Issue 4/5 of Elton's request. Added
+  context_set action tag / do_context_set() -- thin wrapper around
+  lib_bejson_newagent_context_bubble.upsert_cwd_context_section(). Whenever
+  Elton hands the model a project's purpose or ground rules, it calls
+  <context_set section="Purpose">...</context_set> right then instead of
+  composing bejson_create_record/bejson_set_value itself (which risks
+  duplicating a row if it doesn't already know whether one exists) or
+  shell-invoking tools/NA-Init/CLI_Init.py via exec (quoting risk on
+  multi-sentence content). ACTION_PATTERN regex, system-prompt tag docs,
+  and the dispatcher all updated. Context/Persistent_Policy.md (always
+  injected) updated with the instruction to actually use it. Verified:
+  idempotent re-run replaces in place rather than duplicating, empty
+  section rejected, regex/parse_actions round-trip confirmed.
+- 2.2.0 (2026-08-16): CLI_Schema_Distribution (Elton's Option 3). Added
+  bejson_create action tag / do_bejson_create() -- creates a brand-new
+  BEJSON 104/104a/104db file from a Fields spec, enforcing the canonical
+  type vocabulary (string/integer/number/boolean/array/object, lowercase;
+  104a additionally forbids array/object; 104db additionally requires a
+  Record_Type_Parent first field + per-field Record_Type_Parent) BEFORE
+  ever writing to disk, with an error naming the exact problem. Closes the
+  gap Elton flagged (task lists occasionally shipping a "Number" type
+  string instead of "number") at its source: every other bejson_* tag
+  requires the file to already exist, so a brand-new file previously had
+  to go through write_file with the whole Fields array hand-typed from
+  memory -- the one place nothing checked the type vocabulary before it
+  hit disk. ACTION_PATTERN regex, system-prompt tag docs, and the
+  run_action_queue dispatcher all updated; knowledge_pool.bejson's
+  bejson_core_8 entry (always-active BEJSON tool reference) updated to
+  list bejson_create first and say to prefer it over write_file for new
+  BEJSON files. Verified with 6 targeted tests including the literal
+  reported bug string, plus a regex/parse_actions check.
+- 2.1.0 (2026-08-08): Added the Job Creation System's job_task_done
   action tag (self-closing, dispatched via lib_bejson_newagent_jobs), and an
   active_job param on build_system_prompt() that injects the running job's
   goal + incomplete tasks (via jobs.build_job_context_block) into the system
@@ -33,11 +98,14 @@ from lib_bejson_newagent_tui import ExecResult
 from lib_bejson_newagent_backup import record_backup, restore_backup, get_live_backup_ids
 from lib_bejson_Core_bejson_core import (
     bejson_core_create_104a,
+    bejson_core_create_104,
+    bejson_core_create_104db,
     bejson_core_atomic_write,
     bejson_core_load_file,
     bejson_core_get_field_map,
 )
-from lib_bejson_Core_bejson_validator import validate_bejson
+from lib_bejson_Core_bejson_validator import validate_bejson, VALID_VERSIONS
+import lib_bejson_newagent_context_bubble as bubble
 import lib_bejson_newagent_jobs as jobs
 
 _CHECKPOINT_FIELDS = [
@@ -46,7 +114,7 @@ _CHECKPOINT_FIELDS = [
     {"name": "created_at", "type": "string"},
 ]
 
-VERSION = "2.1.0"
+VERSION = "2.5.0"
 _SYSTEM_PROMPT_TEMPLATE = """You are a highly capable terminal agent running on Termux/Android.
 You have access to files, shell execution, search tools, and memory.
 
@@ -90,7 +158,23 @@ CRITICAL RULES:
        (appends a changelog entry to .bejson_project.json, found by walking
         up from cwd)
      <request_continue>reason</request_continue>
+     <bejson_create path="..." version="104a" records_type="MyRecord">[{{"name":"id","type":"string"}},{{"name":"count","type":"integer"}}]</bejson_create>
+     <bejson_create path="..." version="104db" record_types="TypeA,TypeB">[{{"name":"Record_Type_Parent","type":"string"}}, ...]</bejson_create>
+       (creates a NEW BEJSON file with a schema you specify -- rejects an
+        invalid field type (must be exactly string/integer/number/boolean/
+        array/object, lowercase; 104a forbids array/object) before ever
+        writing anything, with an error naming the exact problem, instead
+        of silently producing a file with a wrong type string. File must
+        not already exist -- use bejson_add_field etc. to modify one that
+        does. Prefer this over write_file for any brand-new BEJSON file.)
      <bejson_fields>path/to/file.bejson</bejson_fields>
+     <context_set section="Purpose">This project is a Flask media toolkit for Android.</context_set>
+       (upserts a section into THIS directory's context.bejson -- auto-
+        injected into every future turn here with no keyword needed. Call
+        this whenever the user hands you a project's purpose, main rules,
+        or other standing context worth surviving beyond this
+        conversation. Setting the same section again replaces it, so this
+        is also how you correct it later.)
      <bejson_add_field path="...">{{"name":"x","type":"string"}}</bejson_add_field>
      <bejson_delete_field path="...">field_name</bejson_delete_field>
      <bejson_create_record path="...">["val1", 2, true]</bejson_create_record>
@@ -122,7 +206,7 @@ ACTION_PATTERN = re.compile(
     r"speak|checkpoint|checklist_create|checklist_check|checklist_add|checklist_view|"
     r"html_report|html_report_append|project_log|request_continue|"
     r"bejson_fields|bejson_add_field|bejson_delete_field|bejson_create_record|"
-    r"bejson_delete_record|bejson_set_value|bejson_columns|"
+    r"bejson_delete_record|bejson_set_value|bejson_columns|bejson_create|context_set|"
     r"exec_bg|task_status|task_kill|task_list)(?:\s+([^>]*))?>(.*?)</\1>|<(copy_file|task_list|job_task_done)(?:\s+([^>]*))?\s*/>",
     re.DOTALL | re.IGNORECASE,
 )
@@ -315,16 +399,56 @@ async def run_action_hook(
 _ENV_MARKER = "__NEWAGENT_ENV_MARKER__"
 
 
+def is_command_denylisted(command: str, denylist: Optional[list[str]]) -> Optional[str]:
+    """Returns the matched denylist entry if `command` should be blocked,
+    else None. Checks whether any denylisted token appears ANYWHERE in the
+    command string, not just at the start.
+
+    FIX (2026-08-25, audit F-03): the previous check --
+    `cmd.strip().startswith(blocked)` -- only ever caught a denylisted
+    command as the very first thing typed. Every one of these trivially
+    passed it: `echo hello && rm -rf /`, `bash -c "rm -rf /"`,
+    `cd / && rm -rf .` -- each starts with something else (`echo`, `bash`,
+    `cd`), so the blocked payload riding along after `&&`/`;`/inside a
+    `bash -c` string was never inspected at all.
+
+    This is a substring-anywhere check instead, which closes that
+    specific bypass class. It is NOT a claim that arbitrary shell input
+    can be made fully safe by any denylist -- shell composition (command
+    substitution, quoting, encoding, aliases) can obscure a payload in
+    ways no static string match will catch. Real safety here comes from
+    F-02's fix (this endpoint requiring authentication and defaulting to
+    loopback-only instead of being reachable from any device on the
+    network) -- this check is a second layer, not the primary defense.
+    """
+    if not denylist or not command:
+        return None
+    normalized = command.strip()
+    for blocked in denylist:
+        if blocked and blocked in normalized:
+            return blocked
+    return None
+
+
 async def do_exec(
     command: str,
     cwd: str,
     timeout: int = 60,
     live_feed: bool = False,
     shell_env: Optional[dict] = None,
+    denylist: Optional[list[str]] = None,
 ) -> tuple[int, str, str, Optional[dict]]:
     """Execute shell command asynchronously with optional streaming, CWD
     tracking, and a Global Environment Dictionary (audit Part 1/II — chosen
     over a full PTY session as the lighter option).
+
+    denylist (2026-08-25, audit F-02/F-03): checked here, in the one
+    execution primitive both call paths share (agent.py's tool-call path
+    via engine_interactions.py's _execute_tool, AND webagent.py's
+    /api/exec HTTP route, which used to call this function directly with
+    no denylist check at all). See is_command_denylisted()'s docstring
+    for exactly what changed and what this check does and does not
+    guarantee.
 
     Each <exec> call is still a fresh subprocess (unchanged), but a full
     `env` dump is captured after every successful command and returned as
@@ -340,6 +464,10 @@ async def do_exec(
     below. Full alias/function persistence still needs a PTY (flagged, not
     built, per the audit's PTY-vs-env-dict tradeoff).
     """
+    blocked_on = is_command_denylisted(command, denylist)
+    if blocked_on:
+        return 1, f"[BLOCKED] Command matches denylist: {blocked_on}", cwd, None
+
     cmd_to_run = (
         f"cd {shlex.quote(cwd)} && {command} && pwd && "
         f"printf '%s\\n' '{_ENV_MARKER}' && env"
@@ -875,16 +1003,68 @@ def do_find_files(pattern: str, base: str = ".", cwd: str = ".") -> str:
             cmd = ["find", str(bpath), "-name", f"*{pattern}*"]
         
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        return res.stdout.strip() if res.stdout else "No matches found."
+        return _cap_subprocess_output(res.stdout.strip()) if res.stdout else "No matches found."
     except Exception as e:
         return f"[ERROR] Find failed: {e}"
 
+SUBPROCESS_OUTPUT_CAP_BYTES = 65536  # 64KB -- matches do_http_get's existing cap
+
+def _cap_subprocess_output(text: str) -> str:
+    """Shared with do_search_text/do_find_files/do_fuzzy_find (Remediation
+    pkg, found live-broken in the field: a `search_text bookwriter` call
+    returned 1,954,412 bytes -- matched into old archived session log
+    dumps under logs/, which themselves contain nested escaped JSON from
+    PRIOR sessions, so a single common word recursively exploded into
+    ~2MB. That got force-fed into the very next turn's context (8015
+    input tokens for a 2-turn 'hi' session) and persisted into the new
+    session's own logs, which is why the uploaded logs were themselves
+    ~2MB after only 2 turns. Every other subprocess-backed action already
+    caps its output (do_http_get: 64KB; do_read_file: 100KB) -- these
+    three were the only ones that didn't."""
+    data = text.encode("utf-8", errors="replace")
+    if len(data) <= SUBPROCESS_OUTPUT_CAP_BYTES:
+        return text
+    truncated = data[:SUBPROCESS_OUTPUT_CAP_BYTES].decode("utf-8", errors="ignore")
+    return truncated + "\n... [truncated (64 KB cap hit) -- narrow the pattern/path for more targeted results]"
+
 def do_search_text(pattern: str, path: str = ".", cwd: str = ".") -> str:
     spath = Path(cwd).joinpath(path).resolve()
+    # FIX (Remediation pkg): path may name a single file (narrow the
+    # search) or a directory (the common case) -- cwd= below needs a
+    # directory either way, and the search target needs to be relative
+    # to it for the exclusion globs to anchor correctly (see comment below).
+    if spath.is_file():
+        search_root, target = spath.parent, spath.name
+    else:
+        search_root, target = spath, "."
     try:
-        cmd = ["rg", "-n", pattern, str(spath)]
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        return res.stdout.strip() if res.stdout else "No matches found."
+        cmd = [
+            "rg", "-n",
+            # FIX (Remediation pkg): logs/ and backups/ hold archived
+            # session transcripts (themselves containing nested escaped
+            # JSON from prior sessions) and checkpoint snapshots -- never
+            # what a code/content search is actually looking for, and the
+            # single biggest source of runaway matches. .git/__pycache__/
+            # node_modules excluded as the usual non-source noise.
+            "-g", "!logs/**", "-g", "!backups/**", "-g", "!.git/**",
+            "-g", "!__pycache__/**", "-g", "!node_modules/**",
+            pattern, target,
+        ]
+        # FIX (Remediation pkg, found testing the above): ripgrep anchors
+        # a relative -g glob ("logs/**") to the SEARCH-ROOT ARGUMENT's own
+        # relative structure, not the pattern's literal text. Passing an
+        # absolute path argument (the original code, always -- spath is
+        # always .resolve()d) broke that anchoring entirely -- confirmed
+        # directly: `rg -g '!logs/**' pattern /abs/path` still matched
+        # inside /abs/path/logs/, while `cd /abs/path && rg -g '!logs/**'
+        # pattern .` correctly excluded it. So the exclusion globs above
+        # were silently non-functional for every real call (which always
+        # resolves to an absolute path) -- exactly the gap that let the
+        # 1,954,412-byte `search_text bookwriter` result through logs/ in
+        # the field. Now runs with cwd=search_root and a relative target
+        # so the globs actually anchor where they're meant to.
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=30, cwd=str(search_root))
+        return _cap_subprocess_output(res.stdout.strip()) if res.stdout else "No matches found."
     except FileNotFoundError:
         return "[ERROR] ripgrep (rg) tool is not installed."
     except Exception as e:
@@ -901,7 +1081,7 @@ def do_fuzzy_find(query: str, cwd: str) -> str:
             text=True,
         )
         out, _ = fzf_proc.communicate(timeout=15)
-        return out.strip() if out else "No matches found."
+        return _cap_subprocess_output(out.strip()) if out else "No matches found."
     except Exception as e:
         return f"[ERROR] Fuzzy find failed: {e}"
 
@@ -1028,6 +1208,126 @@ def _bejson_104db_cross_entity_warning(doc: dict, row_type_parent, field_idx: in
 
 def _bejson_resolve(path: str, cwd: str) -> Path:
     return Path(cwd).joinpath(path).resolve()
+
+# CLI_Schema_Distribution (Elton's request, 2026-08): the model was
+# occasionally hand-typing invalid Field type strings (e.g. "Number"
+# instead of "number") when authoring a brand-new BEJSON file via
+# write_file -- the only path that existed for that until now, since every
+# other bejson_* action below operates on a file that must already exist.
+# validate_bejson() doesn't actually reject an unrecognized type string (its
+# type-check chain just silently skips value-checking a column whose type
+# it doesn't recognize), so a "Type": "Number" file could slip through
+# looking clean. This closes that gap at the source: do_bejson_create()
+# enforces the canonical type vocabulary itself, up front, before ever
+# writing to disk, with an error that names the exact allowed values --
+# not just a general BEJSON validation failure the model has to
+# reverse-engineer. This is Option 3 from Elton's proposal: a tool that
+# deploys an already-valid schema so the model works from there, instead
+# of freehand-authoring the whole Fields array (and its type strings) from
+# memory every time.
+_BEJSON_VALID_FIELD_TYPES = {"string", "integer", "number", "boolean", "array", "object"}
+
+def do_bejson_create(
+    path: str, version: str, fields_json: str, cwd: str,
+    records_type: str = "", record_types: str = "",
+) -> str:
+    fpath = _bejson_resolve(path, cwd)
+    if fpath.exists():
+        return f"[ERROR] {path} already exists -- bejson_create is for NEW files only. Use bejson_add_field/bejson_create_record/bejson_set_value to modify an existing one."
+
+    version = (version or "").strip()
+    if version not in VALID_VERSIONS:
+        return f"[ERROR] version=\"{version}\" is not valid. Must be one of: {sorted(VALID_VERSIONS)}."
+
+    try:
+        fields = json.loads(fields_json)
+    except json.JSONDecodeError as e:
+        return f"[ERROR] fields must be a JSON array like [{{\"name\":\"x\",\"type\":\"string\"}}]: {e}"
+    if not isinstance(fields, list) or not fields:
+        return "[ERROR] fields must be a non-empty JSON array of {\"name\":..., \"type\":...} objects."
+
+    bad_type_errors = []
+    seen_names = set()
+    for i, f in enumerate(fields):
+        if not isinstance(f, dict) or "name" not in f or "type" not in f:
+            bad_type_errors.append(f"field {i}: needs at least \"name\" and \"type\" keys, got {f!r}.")
+            continue
+        fname, ftype = f["name"], f["type"]
+        if fname in seen_names:
+            bad_type_errors.append(f"field {i} ('{fname}'): duplicate field name.")
+        seen_names.add(fname)
+        if ftype not in _BEJSON_VALID_FIELD_TYPES:
+            bad_type_errors.append(
+                f"field {i} ('{fname}'): type=\"{ftype}\" is not a valid BEJSON type. "
+                f"Must be exactly one of: {sorted(_BEJSON_VALID_FIELD_TYPES)} (lowercase)."
+            )
+        elif version == "104a" and ftype in ("array", "object"):
+            bad_type_errors.append(
+                f"field {i} ('{fname}'): type=\"{ftype}\" is forbidden in 104a -- "
+                f"104a only allows scalar types (string/integer/number/boolean). "
+                f"Use 104db (multi-entity) or 104 if this field genuinely needs {ftype}."
+            )
+    if bad_type_errors:
+        return "[ERROR] Invalid field definition(s):\n  " + "\n  ".join(bad_type_errors)
+
+    if version == "104db":
+        rt_list = [t.strip() for t in record_types.split(",") if t.strip()]
+        if len(rt_list) < 2:
+            return "[ERROR] 104db needs record_types=\"TypeA,TypeB\" (2+ comma-separated entity names)."
+        if fields[0].get("name") != "Record_Type_Parent":
+            return "[ERROR] 104db's first field must be named exactly \"Record_Type_Parent\" (see do_bejson_add_field's 104db notes for why)."
+        for i, f in enumerate(fields):
+            if f["name"] != "Record_Type_Parent" and "Record_Type_Parent" not in f:
+                return (
+                    f"[ERROR] field {i} ('{f['name']}') needs its own "
+                    f"\"Record_Type_Parent\": \"<one of {rt_list}>\" key -- every field in a "
+                    f"104db file must declare which entity type owns it."
+                )
+            rtp = f.get("Record_Type_Parent")
+            if rtp is not None and rtp not in rt_list:
+                return f"[ERROR] field {i} ('{f['name']}')'s Record_Type_Parent '{rtp}' is not in record_types {rt_list}."
+        doc = bejson_core_create_104db(rt_list, fields, [])
+    else:
+        rt = (records_type or "").strip()
+        if not rt:
+            return f"[ERROR] {version} needs records_type=\"YourRecordName\"."
+        builder = bejson_core_create_104a if version == "104a" else bejson_core_create_104
+        doc = builder(rt, fields, [])
+
+    # Defense in depth: run the real Core validator too, even though the
+    # checks above are stricter than it is (see module comment above).
+    result = validate_bejson(doc, is_file=False)
+    if not result.valid:
+        return "[ERROR] Passed local checks but failed validate_bejson (this shouldn't normally happen -- report it): " + "; ".join(result.errors)
+
+    if not bejson_core_atomic_write(str(fpath), doc):
+        return f"[ERROR] Atomic write failed for {path}"
+
+    field_list = ", ".join(f"{f['name']} ({f['type']})" for f in fields)
+    return (
+        f"[SUCCESS] Created {path} -- BEJSON {version}, "
+        f"Records_Type={doc['Records_Type']}, {len(fields)} field(s): {field_list}. "
+        f"0 rows -- use bejson_create_record to add data."
+    )
+
+def do_context_set(section: str, content: str, cwd: str) -> str:
+    """
+    Elton's INIT request: "anytime he's given important project
+    instructions like the purpose of a project or our main rules, inject
+    those into the directory structure of the project in an init." Thin
+    wrapper around lib_bejson_newagent_context_bubble.upsert_cwd_context_section
+    -- one reliable call instead of the model composing bejson_create_record
+    (must-not-duplicate-if-exists) + bejson_set_value (must-know-it-already-
+    exists) itself, and no shell-quoting risk the way invoking the
+    standalone tools/NA-Init/CLI_Init.py CLI via <exec> would have for
+    multi-sentence content. Same underlying file/schema either way --
+    context.bejson, auto-injected into every turn's context with no
+    keyword trigger and no cooldown.
+    """
+    if not section.strip():
+        return "[ERROR] section cannot be empty."
+    ok, msg = bubble.upsert_cwd_context_section(cwd, section.strip(), content)
+    return ("[SUCCESS] " if ok else "[ERROR] ") + msg
 
 def do_bejson_fields(path: str, cwd: str) -> str:
     fpath = _bejson_resolve(path, cwd)
@@ -1355,6 +1655,15 @@ async def run_action_queue(
                     timeout=config.get("exec_timeout_seconds", 60),
                     live_feed=config.get("live_feed_output", False),
                     shell_env=ctx.get("_shell_env"),
+                    # FIX (2026-09-11, audit V106-09): run_action_queue is the
+                    # single call path both agent.py's REST <exec> tag and
+                    # cliagent.py's --execute reach do_exec() through -- it
+                    # never passed exec_denylist here, so config's denylist
+                    # was silently a no-op for every caller except
+                    # webagent.py's separate /api/exec route, which calls
+                    # do_exec() directly and did pass it. Wiring it in here
+                    # closes the gap at the one shared primitive.
+                    denylist=config.get("exec_denylist"),
                 )
                 exec_res.exit_code = code
                 exec_res.output = out
@@ -1480,6 +1789,19 @@ async def run_action_queue(
             version_label = attrs.get("version", "")
             exec_res.source = version_label
             exec_res.output = do_project_log(version_label, content, cwd)
+
+        elif tag == "bejson_create":
+            path = attrs.get("path", "")
+            exec_res.source = path
+            exec_res.output = do_bejson_create(
+                path, attrs.get("version", ""), content, cwd,
+                records_type=attrs.get("records_type", ""),
+                record_types=attrs.get("record_types", ""),
+            )
+
+        elif tag == "context_set":
+            exec_res.source = attrs.get("section", "")
+            exec_res.output = do_context_set(attrs.get("section", ""), content, cwd)
 
         elif tag == "bejson_fields":
             exec_res.source = content

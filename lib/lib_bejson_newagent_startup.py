@@ -2,18 +2,24 @@
 Library:        lib_bejson_newagent_startup.py
 Family:         NewAgent
 Description:    POWERED BY BEJSON intro splash screen with animated reveal.
-Version:        2.0.0
-Date:           2026-08-09
+Version:        2.0.1
+Date:           2026-08-20
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  bd7b110e-1a17-4ebd-81ce-f14fe85fde92
+RELATIONAL_ID:  e1c4b8a6-3f9d-4c2e-8a6f-9d1b3e7c5a48
 
 CHANGELOG:
+- 2.0.1 (2026-08-20): The banner literally spelled it "NEW A G E N T" --
+  "NEW" run together, then a letter-spaced "A G E N T" -- instead of the
+  consistent letter-drop spacing every other word in this splash uses
+  ("B E J S O N", "P O W E R E D   B Y"). Fixed to "N E W   A G E N T",
+  matching the established single-space-within-a-word /
+  three-space-between-words convention exactly.
 - 2.0.0 (2026-08-09): Replaced the fixed-width ASCII block-letter art
   entirely -- per Elton, it has never fit a mobile screen (BEJSON art was
   54 chars wide, NEWAGENT art was 75, both hardcoded regardless of actual
   terminal size, guaranteed to wrap/break on any phone-width terminal).
   New _drop_reveal_word() renders each word as plain, width-relative
-  centered text -- "B E J S O N" then "NEW A G E N T" -- comfortably under
+  centered text -- "B E J S O N" then "N E W   A G E N T" -- comfortably under
   20 chars even fully spaced, safe on any realistic terminal width. Each
   letter animates in independently: it falls down its own column as a
   random JSON-syntax glyph ({ } [ ] : , " 0 1 -- a direct nod to BEJSON
@@ -39,7 +45,7 @@ import sys
 import time
 from datetime import datetime
 
-VERSION = "2.0.0"
+VERSION = "2.0.1"
 
 # -- Color constants ---------------------------------------------------------
 _RESET     = "\033[0m"
@@ -235,7 +241,7 @@ def show_startup(agent_version: str = "", key_count: int = 0, model: str = "") -
     # -- Letter-drop reveal: BEJSON, then NEW AGENT ----------------------------
     _drop_reveal_word("B E J S O N", _RED_B, width, max_drop=5, frame_delay=0.045)
     time.sleep(0.15)
-    _drop_reveal_word("NEW A G E N T", _RED, width, max_drop=5, frame_delay=0.045)
+    _drop_reveal_word("N E W   A G E N T", _RED, width, max_drop=5, frame_delay=0.045)
     time.sleep(0.1)
 
     # -- Separator --------------------------------------------------------------

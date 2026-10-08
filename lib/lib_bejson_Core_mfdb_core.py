@@ -165,6 +165,18 @@ def _write_manifest_doc(doc: dict, manifest_path: str) -> None:
     if not bejson_core_atomic_write(manifest_path, doc):
         raise MFDBCoreError(f"Failed to write manifest doc to {manifest_path}", E_MFDB_CORE_WRITE_FAILED)
 
+def _write_checked(doc: dict, path: str, label: str = "file") -> None:
+    """Remediation pkg: generic sibling of _write_entity_doc/_write_manifest_doc
+    for writes that are neither -- lock/meta docs, slave manifests, etc.
+    Every bare bejson_core_atomic_write() call in this module whose boolean
+    success return was previously discarded (audit finding: 4 cited
+    instances at old lines 527/559/891/974; a full pass found 13 total
+    across the file) now routes through one of these three helpers so a
+    disk-full/permission failure raises instead of being silently
+    swallowed while the caller believes the write succeeded."""
+    if not bejson_core_atomic_write(path, doc):
+        raise MFDBCoreError(f"Failed to write {label} to {path}", E_MFDB_CORE_WRITE_FAILED)
+
 def _update_manifest_record_count(
     manifest_path: str, entity_name: str, count: int
 ) -> None:
@@ -524,7 +536,17 @@ def mfdb_core_self_heal(manifest_path: str) -> Dict[str, Any]:
                             doc["Values"][i] = row[:field_count]
                             repaired += 1
                     if repaired > 0:
-                        bejson_core_atomic_write(entity_path, doc)
+                        # FIX (Remediation pkg): was a bare atomic_write call
+                        # whose boolean success return was discarded -- a
+                        # disk-full/permission failure here reported
+                        # "Repaired N positional violations" while the file
+                        # on disk was left untouched (silent data loss on
+                        # the very findings self-heal exists to fix). Now
+                        # routes through _write_entity_doc(), which raises
+                        # MFDBCoreError on failure -- caught by this same
+                        # try/except and correctly appended to
+                        # remaining_errors instead of a false "actions" entry.
+                        _write_entity_doc(doc, entity_path)
                         report["actions"].append(f"Repaired {repaired} positional violations in {entity}")
                 except Exception as e:
                     report["remaining_errors"].append(f"Failed to repair {entity}: {str(e)}")
@@ -556,7 +578,7 @@ def _mfdb_core_repair_hierarchy(entity_path: str, new_hierarchy: str) -> bool:
     try:
         doc = bejson_core_load_file(entity_path)
         doc["Parent_Hierarchy"] = new_hierarchy
-        bejson_core_atomic_write(entity_path, doc)
+        _write_entity_doc(doc, entity_path)  # raises on failure -> caught below, correctly returns False
         return True
     except Exception:
         return False
@@ -888,7 +910,7 @@ def mfdb_core_create_entity_file(
         "Fields":           fields,
         "Values":           [],
     }
-    bejson_core_atomic_write(resolved, entity_doc)
+    _write_entity_doc(entity_doc, resolved)
 
     manifest_doc = _load_json(manifest_path)
     fn_list      = [f["name"] for f in manifest_doc["Fields"]]
@@ -971,7 +993,7 @@ def mfdb_core_create_database(
         "Values":          manifest_values,
     }
 
-    bejson_core_atomic_write(manifest_path, manifest_doc)
+    _write_manifest_doc(manifest_doc, manifest_path)
 
     for entity_name, fp_rel, fields in entity_defs_to_file:
         resolved   = os.path.normpath(os.path.join(root_dir, fp_rel))
@@ -989,7 +1011,7 @@ def mfdb_core_create_database(
             "Fields":           fields,
             "Values":           [],
         }
-        bejson_core_atomic_write(resolved, entity_doc)
+        _write_entity_doc(entity_doc, resolved)
 
     if debug_mode:
         mfdb_core_enable_debug(manifest_path, row_cap=debug_row_cap, debug_reads=debug_reads)
@@ -1158,7 +1180,7 @@ def mfdb_federation_distill_logs(
 
         # Truncate local entity to max_rows
         doc["Values"] = kept
-        bejson_core_atomic_write(entity_path, doc)
+        _write_entity_doc(doc, entity_path)
 
         # Update record count in manifest
         manifest_doc = _load_json(slave_manifest_path)
@@ -1168,7 +1190,7 @@ def mfdb_federation_distill_logs(
             if row[fm.get("entity_name", 0)] == entity_name and "record_count" in fm:
                 row[fm["record_count"]] = len(kept)
                 break
-        bejson_core_atomic_write(slave_manifest_path, manifest_doc)
+        _write_manifest_doc(manifest_doc, slave_manifest_path)
 
         return True
 
@@ -1270,7 +1292,7 @@ def _mfdb_meta_log(
         with ResilientPIDLock(meta_path, timeout_seconds=5):
             doc = _load_json(meta_path)
             doc.setdefault("Values", []).append(row)
-            bejson_core_atomic_write(meta_path, doc)
+            _write_checked(doc, meta_path, "debug meta log")
 
         # Auto-trim if over cap
         _mfdb_meta_auto_trim(manifest_path, meta_name, meta_path)
@@ -1288,7 +1310,7 @@ def _mfdb_meta_auto_trim(manifest_path: str, meta_name: str, meta_path: str) -> 
         rows = doc.get("Values", [])
         if len(rows) > cap:
             doc["Values"] = rows[-cap:]
-            bejson_core_atomic_write(meta_path, doc)
+            _write_checked(doc, meta_path, "debug meta log")
             _update_manifest_record_count(manifest_path, meta_name, len(doc["Values"]))
     except Exception:
         pass
@@ -1350,7 +1372,7 @@ def mfdb_core_enable_debug(
     doc["Debug_Meta_Entity"] = meta_name
     doc["Debug_Row_Cap"]     = str(row_cap)
     doc["Debug_Reads"]       = "true" if debug_reads else "false"
-    bejson_core_atomic_write(manifest_path, doc)
+    _write_manifest_doc(doc, manifest_path)
 
     # Create meta entity file if it doesn't exist
     meta_fp_rel  = f"data/{meta_name}.bejson"
@@ -1369,7 +1391,7 @@ def mfdb_core_enable_debug(
             "Fields":           META_DEBUG_FIELDS,
             "Values":           [],
         }
-        bejson_core_atomic_write(meta_abs, meta_doc)
+        _write_checked(meta_doc, meta_abs, "debug meta entity")
 
         # Register in manifest if not already there
         entries = _get_manifest_entries(manifest_path)
@@ -1378,7 +1400,7 @@ def mfdb_core_enable_debug(
             doc2.setdefault("Values", []).append(
                 [meta_name, meta_fp_rel, "Debug audit log (auto-generated)", 0, "1.0", None]
             )
-            bejson_core_atomic_write(manifest_path, doc2)
+            _write_manifest_doc(doc2, manifest_path)
 
     # Initial schema snapshot as drift baseline
     _mfdb_debug_schema_snapshot(manifest_path, meta_name)
@@ -1389,7 +1411,7 @@ def mfdb_core_disable_debug(manifest_path: str) -> None:
     """Set Debug_Mode=false. Meta entity and its data are preserved."""
     doc = _load_json(manifest_path)
     doc["Debug_Mode"] = "false"
-    bejson_core_atomic_write(manifest_path, doc)
+    _write_manifest_doc(doc, manifest_path)
 
 
 def mfdb_core_get_debug_log(manifest_path: str) -> List[Dict[str, Any]]:
@@ -1437,7 +1459,7 @@ def mfdb_core_clear_debug_log(manifest_path: str) -> int:
             doc  = _load_json(meta_path)
             deleted = len(doc.get("Values", []))
             doc["Values"] = []
-            bejson_core_atomic_write(meta_path, doc)
+            _write_checked(doc, meta_path, "debug meta log")
         _update_manifest_record_count(manifest_path, meta_name, 0)
         return deleted
     except Exception:

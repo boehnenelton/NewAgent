@@ -113,6 +113,9 @@ def bejson_core_atomic_write(path: str, data: dict) -> bool:
         os.replace(tmp_path, path)
         return True
     except Exception as e:
+        import traceback
+        print(f"[ATOMIC_WRITE_FAIL] {path}: {e!r}")
+        traceback.print_exc()
         logging.error(f"[BEJSON_CORE] Atomic write failed for {path}: {e}")
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)

@@ -17,12 +17,132 @@ Description:    Context Bubble pipeline (pkg015) — replaces the pkg014-removed
                 even sent to the compression call, so there's a structural
                 guarantee it can't be altered by a summarization mistake, not
                 just an instruction asking the model not to touch it.
-Version:        1.10.0
-Date:           2026-08-09
+Version:        1.17.0
+Date:           2026-09-18
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  898578d4-ac89-4150-8bf3-b7d714703d56
+RELATIONAL_ID:  833087a5-4830-4990-b9bf-130f217c4a40
 
 CHANGELOG:
+- 1.17.0 (2026-09-18): Remediation pass, audit finding #4 ("highest-value
+  win" per the audit's own Phase 3 roadmap) -- assemble_bubble() re-read
+  and re-parsed every static context file (Context_Bubble policy .md,
+  triggers.bejson, constant_config.bejson, knowledge_pool.bejson ~28KB)
+  from disk on EVERY turn, even though these change on the order of "the
+  user edited one via a slash command", not every turn. Added
+  _cached_read(path, loader): an mtime+size-keyed cache -- re-reads only
+  when a file's stat() signature actually changes, otherwise returns the
+  previously-parsed value with zero disk I/O. Wired into all 5 read
+  sites: load_constants(), _read_policy(), scan_triggers(),
+  build_knowledge_section(), _lookup_knowledge_entry() (the last two
+  share knowledge_path's cache entry, so a kb:// keyword-trigger lookup
+  in the same turn as the interval-drip pass gets a free second hit).
+  Process-local (module-level dict, not persisted) and thread-safe via a
+  lock, appropriate for the single-process-multi-thread pattern the
+  sub-agent family already assumes elsewhere in this codebase. Verified:
+  standalone test confirms a loader is invoked exactly once across two
+  reads of an unchanged file, then again after the file's content (and
+  therefore size) actually changes; py_compile clean.
+- 1.16.0 (2026-08-20): tools/init/Cli_Init.py renamed to CLI_Init.py (all
+  caps CLI, matching the rest of the tools/ naming convention after
+  Elton's manual rename pass) -- updated the one reference to it in this
+  file's docstring/system-prompt text to match. No functional change.
+- 1.15.0 (2026-08-20): Elton fixed constant_config.bejson's "any"-typed
+  setting_value the same way as config.json's earlier fix (1.13.0) --
+  "any" isn't a valid BEJSON type, and lib_bejson_Core_bejson_validator.py
+  2.1.0 now correctly rejects it. _coerce_constant_value() added: parses
+  the file's string-typed values back to native int/float/bool for
+  load_constants()'s return dict (matching the same serialize-for-file /
+  coerce-on-load pattern used in lib_bejson_newagent_config.py), so every
+  caller reading a constant (e.g. constants.get("knowledge_drip_interval"))
+  keeps getting a real Python type. Verified: load_constants() against
+  both a fresh-defaults config dir and the actual shipped
+  config/constant_config.bejson both return the correct native type
+  (int/float/bool) for all 12 constants; config/constant_config.bejson
+  itself confirmed valid BEJSON (setting_value declared "string", matching
+  config.json's fix).
+- 1.14.0 (2026-08-17): build_cwd_context_section now walks from cwd up to
+  the filesystem root collecting every ancestor directory's context.bejson,
+  instead of only checking cwd itself -- matches how GEMINI.md/CLAUDE.md/
+  AGENTS.md work in Gemini CLI, Antigravity, etc: a file placed at, say,
+  /storage/emulated/0/context.bejson now applies in
+  /storage/emulated/0/Pictures too, not just the exact directory NewAgent
+  is sitting in. Merge order is root-to-leaf; a section name repeated at a
+  nearer directory REPLACES the broader one entirely rather than appending
+  a duplicate block (nearest-directory-wins, same precedence rule as a
+  more specific CSS selector). Writing is unchanged -- CLI_Init.py and the
+  context_set action tag still write to exactly one directory's own file;
+  only the read side now walks the chain. Verified: a leaf directory two
+  levels below a root context.bejson with no file of its own correctly
+  inherits both sections; adding a same-named section at the intermediate
+  directory correctly overrides just that one section (appears exactly
+  once, not twice) while the untouched section still inherits from root;
+  budget cap still respected.
+- 1.13.0 (2026-08-17): INIT -- Issue 4/5 of Elton's request. Added
+  upsert_cwd_context_section(cwd, section, content) -- sets one (section,
+  content) row in cwd's context.bejson (creating the file first if needed,
+  same schema as init_cwd_context_template), replacing that section's
+  content in place if it already exists rather than duplicating a row.
+  This is the shared engine behind both tools/NA-Init/CLI_Init.py (a new
+  standalone CLI that scaffolds/updates a project's context.bejson from
+  outside a running NewAgent session) and the new context_set action tag
+  (lib_bejson_newagent_actions.py) the model calls in-session. Same file,
+  same schema, both paths converge on one thing -- nothing to reconcile.
+  Verified: idempotent re-run updates in place (row count stays constant),
+  CLI-written file confirmed to correctly auto-inject via
+  build_cwd_context_section, validate_bejson clean.
+- 1.12.0 (2026-08-16): Persistent Drip -- Issue 3/5 of Elton's request.
+  (1) build_knowledge_section rewritten: it used to replay the exact same
+  rows in the exact same order every firing, truncated wherever budget ran
+  out, so anything past the cutoff never appeared and everything before it
+  was identical forever. Now uses a weight-biased round-robin schedule
+  (knowledge_pool.bejson's new "weight" column, 1/2/3, default 2 -- lower
+  fires more often) with the fire position derived from turn // interval,
+  so no separate persisted rotation-cursor state is needed. A row never
+  repeats within one firing even if its weight put multiple copies in the
+  schedule. Verified 45:30:15 (~3:2:1, matching the 3/2/1 rep counts for
+  weight 1/2/3) firing-frequency ratio under a budget that only fits one
+  row per firing, and confirmed three consecutive firings under a tight
+  budget are not identical (actual rotation, not just weighting).
+  (2) build_keyword_section now dedupes by resolved content -- needed
+  because bejson_core_* facts are now reachable via multiple keywords
+  ("bejson" fires the whole ordered set; "104"/"104a"/"104db"/"mfdb" also
+  each fire their own specific entry standalone), and a message mentioning
+  both would otherwise inject the same fact twice.
+  (3) config/knowledge_pool.bejson: added the "weight" field (appended,
+  BEJSON positional integrity); moved all 8 bejson_core_* rows from the
+  always-on "bejson_format" category to "keyword_only" -- Elton's
+  complaint was that BEJSON info was "spamming...too often" regardless of
+  relevance, and the blanket interval drip had no way to NOT show
+  something once it existed. Now it only surfaces when actually asked
+  about (currently leaves the blanket pool with 0 eligible rows -- the
+  rotation/weight mechanism above is tested and ready for whenever new
+  blanket-category content gets added). Enriched bejson_core_1 with a
+  minimal example schema for each of 104/104a/104db (Elton's request);
+  enriched bejson_core_2 (104) with an explicit spreadsheet analogy
+  (Fields = fixed header row, each Values row = one spreadsheet row,
+  same column position every row).
+  (4) config/triggers.bejson: added "bejson" (fires bejson_core_1..8 in
+  priority order: general overview+examples first, then 104, then
+  104a/104db, then MFDB's own general-then-detail set, then the tool-tag
+  reference last) plus standalone "104"/"104a"/"104db"/"mfdb" keywords for
+  asking about one format without saying "bejson" itself. Verified against
+  Elton's own worked example ("I say BEJSON 104") end-to-end: matched 9
+  trigger rows, general fact (bejson_core_1) confirmed to land before the
+  104-specific fact (bejson_core_2) in the assembled text, and
+  bejson_core_2 (matched twice -- once via "bejson", once via standalone
+  "104") confirmed to appear exactly once in the output (dedup working).
+- 1.11.0 (2026-08-16): build_env_file_section now takes env_file_paths
+  (list[Path]) instead of a single env_file_path, merging var_name=var_value
+  rows from every resolved source (new split env_secure_file_path +
+  env_paths_file_path, or the single legacy file as fallback) into one
+  budget-capped drip, same cadence/skip/truncation rules as before. Reads
+  every source fresh from disk on every firing turn -- same rationale as
+  the original single-file design: a stale copy of a rotated key baked into
+  the pool would drip a revoked/wrong key back into context indefinitely.
+  assemble_bubble()'s env_file_path param renamed to env_file_paths
+  (list[str]) to match; both call sites (webagent.py, agent.py) updated to
+  pass lib_bejson_newagent_env.resolve_env_bejson_sources(config) instead
+  of a single config.get("env_file_path").
 - 1.10.0 (2026-08-09): Renamed the manual-flush concept to Amnesia/Rebirth
   per Elton. Added save_amnesia_recap/load_amnesia_recap (persist the
   compressed recap to Context/amnesia_recap.txt so it survives past the
@@ -42,6 +162,7 @@ CHANGELOG:
 """
 
 import logging
+import threading
 import time
 from pathlib import Path
 from typing import Any, Optional
@@ -55,7 +176,44 @@ from lib_bejson_Core_bejson_core import (
 from lib_bejson_Core_bejson_validator import validate_bejson
 import lib_bejson_newagent_errors as errors
 
-VERSION = "1.10.0"
+VERSION = "1.17.0"
+
+# ── mtime-based read cache (Remediation pkg, audit finding #4) ─────────────
+_FILE_CACHE_LOCK = threading.Lock()
+_FILE_CACHE: dict[str, tuple[float, int, Any]] = {}  # path -> (mtime, size, value)
+
+
+def _cached_read(path: Path, loader):
+    """Returns loader(path), skipping the actual read/parse if `path`'s
+    mtime+size are unchanged since the last call for this exact path.
+
+    assemble_bubble() used to re-read and re-parse every static context
+    file -- Context_Bubble policy .md, triggers.bejson, constant_config.
+    bejson, and knowledge_pool.bejson (~28KB per the audit) -- on EVERY
+    turn, paying full disk I/O + BEJSON parse + validation cost even
+    though these files change on the order of "the user edited one via a
+    slash command", not every turn. mtime+size together (not mtime
+    alone) as the staleness key: a filesystem with coarse mtime
+    resolution (1s on some Android filesystems) could otherwise miss a
+    second write landing in the same tick; both come from one stat()
+    call so checking both costs nothing extra.
+    """
+    key = str(path)
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        with _FILE_CACHE_LOCK:
+            _FILE_CACHE.pop(key, None)
+        return loader(path)
+    sig = (st.st_mtime, st.st_size)
+    with _FILE_CACHE_LOCK:
+        cached = _FILE_CACHE.get(key)
+        if cached is not None and (cached[0], cached[1]) == sig:
+            return cached[2]
+    value = loader(path)
+    with _FILE_CACHE_LOCK:
+        _FILE_CACHE[key] = (sig[0], sig[1], value)
+    return value
 
 BUBBLE_FILENAME = "Context_Bubble.md"
 POLICY_FILENAME = "Persistent_Policy.md"
@@ -70,25 +228,49 @@ _DEFAULT_POLICY_TEXT = (
 
 _CONSTANT_FIELDS = [
     {"name": "constant_name", "type": "string"},
-    {"name": "defined_value", "type": "any"},
-    {"name": "default_value", "type": "any"},
+    {"name": "defined_value", "type": "string"},
+    {"name": "default_value", "type": "string"},
     {"name": "description", "type": "string"},
 ]
 
-_DEFAULT_CONSTANTS: list[tuple[str, Any, str]] = [
-    ("max_context_tokens", 8000, "Total token budget for the assembled bubble"),
-    ("pct_persistent_policy", 0.20, "Share of budget for core directives"),
-    ("pct_active_tasks", 0.20, "Share of budget for active-task context, sourced from checklist_*.bejson files in the current directory (checklist_create/check/add/view tools)"),
-    ("pct_env_file", 0.05, "Share of budget for the live env_file.json drip (see build_env_file_section)"),
-    ("pct_keyword_triggers", 0.30, "Share of budget for keyword-triggered files"),
-    ("pct_knowledge_pool", 0.15, "Share of budget for knowledge-pool drips"),
-    ("pct_cwd_context", 0.10, "Share of budget for cwd/context.bejson — auto-injected, no opt-in"),
-    ("chars_per_token", 4, "Chars-per-token estimate used for all budget math (no real tokenizer call)"),
-    ("global_default_cooldown", 300, "Default seconds between keyword trips"),
-    ("knowledge_drip_interval", 5, "Turns between knowledge-pool injections"),
-    ("observer_refinement_interval", 7, "Turns between Observer compression checks"),
-    ("observer_enabled", False, "Part 4 switch — Observer compression on/off"),
+_DEFAULT_CONSTANTS: list[tuple[str, str, str]] = [
+    ("max_context_tokens", "8000", "Total token budget for the assembled bubble"),
+    ("pct_persistent_policy", "0.20", "Share of budget for core directives"),
+    ("pct_active_tasks", "0.20", "Share of budget for active-task context, sourced from checklist_*.bejson files in the current directory (checklist_create/check/add/view tools)"),
+    ("pct_env_file", "0.05", "Share of budget for the live env_file.json drip (see build_env_file_section)"),
+    ("pct_keyword_triggers", "0.30", "Share of budget for keyword-triggered files"),
+    ("pct_knowledge_pool", "0.15", "Share of budget for knowledge-pool drips"),
+    ("pct_cwd_context", "0.10", "Share of budget for cwd/context.bejson — auto-injected, no opt-in"),
+    ("chars_per_token", "4", "Chars-per-token estimate used for all budget math (no real tokenizer call)"),
+    ("global_default_cooldown", "300", "Default seconds between keyword trips"),
+    ("knowledge_drip_interval", "5", "Turns between knowledge-pool injections"),
+    ("observer_refinement_interval", "7", "Turns between Observer compression checks"),
+    ("observer_enabled", "false", "Part 4 switch — Observer compression on/off"),
 ]
+
+
+def _coerce_constant_value(raw: Any) -> Any:
+    """Parse a string-typed BEJSON constant back to its native Python type.
+
+    Handles: integer, float, boolean, null/None.  Unrecognised strings
+    pass through unchanged.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        return raw  # already native (legacy data)
+    lower = raw.strip().lower()
+    if lower in ("true", "false"):
+        return lower == "true"
+    try:
+        return int(raw)
+    except ValueError:
+        pass
+    try:
+        return float(raw)
+    except ValueError:
+        pass
+    return raw
 
 # Percentage-category constants a budget view/editor should walk in order.
 _PCT_KEYS = [
@@ -190,20 +372,24 @@ def _backfill_constants(constants_path: Path) -> None:
     if not missing:
         return
     for name, default, desc in missing:
-        rows.append([name, None, default, desc])
+        rows.append([name, None, str(default), desc])
     new_doc = bejson_core_create_104a("Constant", list(_CONSTANT_FIELDS), rows)
     if not bejson_core_atomic_write(str(constants_path), new_doc):
         logger.error("[ContextBubble] Atomic write failed backfilling %s", constants_path)
 
 
 def load_constants(config_dir: Path) -> dict[str, Any]:
-    """Effective value = defined_value if set, else default_value."""
+    """Effective value = defined_value if set, else default_value.
+
+    Values are stored as strings in the BEJSON file and coerced back
+    to native Python types (int / float / bool) via _coerce_constant_value.
+    """
     path = config_dir / "constant_config.bejson"
-    result = dict((name, default) for name, default, _ in _DEFAULT_CONSTANTS)
+    result = {name: _coerce_constant_value(default) for name, default, _ in _DEFAULT_CONSTANTS}
     if not path.exists():
         return result
 
-    doc = bejson_core_load_file(str(path))
+    doc = _cached_read(path, lambda p: bejson_core_load_file(str(p)))
     if not isinstance(doc, dict):
         return result
     validation = validate_bejson(doc, is_file=False)
@@ -218,13 +404,17 @@ def load_constants(config_dir: Path) -> dict[str, Any]:
         if len(row) <= max(name_idx, defined_idx, default_idx):
             continue
         name = row[name_idx]
-        value = row[defined_idx] if row[defined_idx] is not None else row[default_idx]
-        result[name] = value
+        raw = row[defined_idx] if row[defined_idx] is not None else row[default_idx]
+        result[name] = _coerce_constant_value(raw)
     return result
 
 
 def set_constant(config_dir: Path, name: str, value: Any) -> bool:
-    """Write a constant's defined_value (used by /observer toggle etc)."""
+    """Write a constant's defined_value (used by /observer toggle etc).
+
+    Converts the native value to a string for BEJSON storage.  Pass None
+    to clear the override and fall back to the default.
+    """
     path = config_dir / "constant_config.bejson"
     doc = bejson_core_load_file(str(path)) if path.exists() else None
     if not isinstance(doc, dict):
@@ -233,9 +423,10 @@ def set_constant(config_dir: Path, name: str, value: Any) -> bool:
     name_idx = fmap.get("constant_name", 0)
     defined_idx = fmap.get("defined_value", 1)
     rows = doc.get("Values", [])
+    stored = str(value).lower() if isinstance(value, bool) else (str(value) if value is not None else None)
     for row in rows:
         if len(row) > name_idx and row[name_idx] == name:
-            row[defined_idx] = value
+            row[defined_idx] = stored
             return bejson_core_atomic_write(str(path), doc)
     return False
 
@@ -253,8 +444,32 @@ def _budget_chars(constants: dict, pct_key: str) -> int:
 def _read_policy(policy_path: Path, budget_chars: int) -> str:
     if not policy_path.exists():
         return ""
-    text = policy_path.read_text("utf-8", errors="replace")
+    text = _cached_read(policy_path, lambda p: p.read_text("utf-8", errors="replace"))
     return text[:budget_chars]
+
+
+def trim_history(history: list, max_turns: int) -> None:
+    """FIX (2026-08-27, audit F-11): max_history_turns has had a config
+    entry (with a default and a description) since it was first added,
+    but nothing ever actually read it -- history grew unbounded for the
+    life of every session, in both agent.py and webagent.py.
+
+    Mutates `history` in place (keeps the object identity both callers
+    already hold references to, rather than requiring every append site
+    to also reassign `history = trim_history(...)`), trimming from the
+    front (oldest first) down to the most recent max_turns*2 entries -- a
+    "turn" here means one user message plus its one model response, so
+    the multiplier keeps whole turns together rather than risking a cut
+    that leaves a dangling response with no matching user message (or
+    vice versa) at the boundary. max_turns <= 0 means unlimited (no
+    trim), matching how a 0/negative budget is treated elsewhere in this
+    codebase's config handling.
+    """
+    if max_turns is None or max_turns <= 0:
+        return
+    max_entries = max_turns * 2
+    if len(history) > max_entries:
+        del history[: len(history) - max_entries]
 
 
 # ── Keyword triggers (Part 2) ────────────────────────────────────────────────
@@ -273,7 +488,7 @@ def scan_triggers(
     trimmed it)."""
     if not triggers_path.exists():
         return []
-    doc = bejson_core_load_file(str(triggers_path))
+    doc = _cached_read(triggers_path, lambda p: bejson_core_load_file(str(p)))
     if not isinstance(doc, dict):
         return []
     fmap = bejson_core_get_field_map(doc)
@@ -312,6 +527,10 @@ def build_keyword_section(
         return "", 0
     parts = []
     used = 0
+    seen_content = set()  # dedup: e.g. "bejson" and "104a" both said in one
+                           # message both resolve kb://bejson_core_3 -- only
+                           # inject it once, under whichever keyword matched
+                           # first (trigger row order in triggers.bejson).
     for m in matches:
         context_path = m["context_path"] or ""
         if context_path.startswith("kb://"):
@@ -329,6 +548,9 @@ def build_keyword_section(
                 content = fpath.read_text("utf-8", errors="replace")
             except Exception:
                 continue
+        if content in seen_content:
+            continue
+        seen_content.add(content)
         block = f"[{m['keyword']}]\n{content}"
         if used + len(block) > budget_chars:
             remaining = budget_chars - used
@@ -348,7 +570,7 @@ def _lookup_knowledge_entry(knowledge_path: Path, info_id: str) -> Optional[str]
     excluded here the same way they're excluded from the interval drip."""
     if not knowledge_path.exists():
         return None
-    doc = bejson_core_load_file(str(knowledge_path))
+    doc = _cached_read(knowledge_path, lambda p: bejson_core_load_file(str(p)))
     if not isinstance(doc, dict):
         return None
     fmap = bejson_core_get_field_map(doc)
@@ -378,21 +600,34 @@ def build_knowledge_section(
     a growing set of topic-specific facts (e.g. one design system's worth of
     detail) would compete with foundational always-relevant facts for the
     same fixed budget and could silently crowd them out as more get added.
+
+    2026-08-16 (Elton's Persistent Drip request): this used to always show
+    the exact same rows in the exact same order every time it fired,
+    front-to-back, truncated wherever the budget ran out -- so anything
+    past the truncation point never appeared, and everything before it
+    appeared identically on every single firing forever. Now it rotates: a
+    `weight` column (1/2/3, default 2 -- lower fires more often) controls
+    how many times each row enters a repeating fire schedule, and the
+    schedule's start point advances by one position every time this
+    function actually fires (derived from turn // interval, so no separate
+    persisted rotation-cursor state is needed -- the caller's own turn
+    counter already provides it). Within one firing, a row is never shown
+    twice even if its weight put multiple copies in the schedule.
     """
     if interval <= 0 or turn % interval != 0 or budget_chars <= 0:
         return "", 0
     if not knowledge_path.exists():
         return "", 0
-    doc = bejson_core_load_file(str(knowledge_path))
+    doc = _cached_read(knowledge_path, lambda p: bejson_core_load_file(str(p)))
     if not isinstance(doc, dict):
         return "", 0
     fmap = bejson_core_get_field_map(doc)
     content_idx = fmap.get("content", 1)
     category_idx = fmap.get("category", 2)
     active_idx = fmap.get("is_active", 3)
+    weight_idx = fmap.get("weight", 4)
 
-    parts = []
-    used = 0
+    eligible = []  # (block_text,) per active, non-keyword_only row, in file order
     for row in doc.get("Values", []):
         if len(row) <= max(content_idx, category_idx, active_idx):
             continue
@@ -400,7 +635,36 @@ def build_knowledge_section(
             continue
         if row[category_idx] == KEYWORD_ONLY_CATEGORY:
             continue
-        block = f"[{row[category_idx]}]\n{row[content_idx]}"
+        weight = row[weight_idx] if len(row) > weight_idx and row[weight_idx] in (1, 2, 3) else 2
+        eligible.append((f"[{row[category_idx]}]\n{row[content_idx]}", weight))
+    if not eligible:
+        return "", 0
+
+    # Round-robin schedule: row order preserved within each pass, but a
+    # weight-1 row gets 3 passes, weight-2 gets 2, weight-3 gets 1 -- so
+    # frequent rows recur spread out across the cycle instead of clumped
+    # at the front, and weight purely controls how OFTEN a row comes up
+    # across many firings, not where it sits within one.
+    schedule = []
+    for pass_num in range(3):
+        for idx, (_block, weight) in enumerate(eligible):
+            reps = 4 - weight  # weight 1->3, 2->2, 3->1
+            if pass_num < reps:
+                schedule.append(idx)
+    cycle_len = len(schedule)
+    cursor = (turn // interval) % cycle_len
+
+    parts = []
+    used = 0
+    picked = set()
+    steps = 0
+    while steps < cycle_len and used < budget_chars:
+        idx = schedule[(cursor + steps) % cycle_len]
+        steps += 1
+        if idx in picked:
+            continue
+        picked.add(idx)
+        block = eligible[idx][0]
         if used + len(block) > budget_chars:
             remaining = budget_chars - used
             if remaining > 0:
@@ -412,49 +676,59 @@ def build_knowledge_section(
     return "\n\n".join(parts), used
 
 
-def build_env_file_section(env_file_path: Path, turn: int, interval: int, budget_chars: int) -> tuple[str, int]:
+def build_env_file_section(env_file_paths: list[Path], turn: int, interval: int, budget_chars: int) -> tuple[str, int]:
     """
-    Elton's request 2026-07-24: /storage/emulated/0/env_file.json (the
-    GlobalEnv file env_file.py/env_file.sh/~/.bashrc all read from) should be
-    a permanent fact the agent regularly re-sees, not something it only
-    catches if it happens to read_file it mid-session. Uses the same
-    interval-drip cadence and budget-capping pattern as
-    build_knowledge_section, but reads env_file_path fresh from disk on every
-    firing turn instead of storing a snapshot in knowledge_pool.bejson --
-    env vars (API keys especially) get rotated, and a stale copy baked into
-    the knowledge pool would drip a revoked/wrong key back into context
-    indefinitely. Skips rows with no var_name (env_file.json has been seen
-    with trailing [null, null, null] padding rows in practice).
+    Elton's request 2026-07-24: the env source(s) (GlobalEnv files
+    env_file.py/env_file.sh/~/.bashrc -- now split into a secure file and a
+    paths file -- all read from) should be a permanent fact the agent
+    regularly re-sees, not something it only catches if it happens to
+    read_file it mid-session. Uses the same interval-drip cadence and
+    budget-capping pattern as build_knowledge_section, but reads every
+    source fresh from disk on every firing turn instead of storing a
+    snapshot in knowledge_pool.bejson -- env vars (API keys especially) get
+    rotated, and a stale copy baked into the knowledge pool would drip a
+    revoked/wrong key back into context indefinitely. Skips rows with no
+    var_name (these files have been seen with trailing [null, null, null]
+    padding rows in practice).
+
+    2026-08-16: takes a list of sources instead of one (new split env
+    scheme -- secure + paths, or the single legacy file as fallback) and
+    merges their rows into a single budget-capped drip, source by source in
+    the order given.
     """
     if interval <= 0 or turn % interval != 0 or budget_chars <= 0:
         return "", 0
-    fpath = Path(env_file_path)
-    if not env_file_path or not fpath.exists():
+    if not env_file_paths:
         return "", 0
-    doc = bejson_core_load_file(str(fpath))
-    if not isinstance(doc, dict):
-        return "", 0
-    fmap = bejson_core_get_field_map(doc)
-    name_idx = fmap.get("var_name", 0)
-    value_idx = fmap.get("var_value", 1)
 
     parts = []
     used = 0
-    for row in doc.get("Values", []):
-        if len(row) <= max(name_idx, value_idx):
+    for env_file_path in env_file_paths:
+        fpath = Path(env_file_path)
+        if not env_file_path or not fpath.exists():
             continue
-        name = row[name_idx]
-        if not name:
+        doc = bejson_core_load_file(str(fpath))
+        if not isinstance(doc, dict):
             continue
-        block = f"{name}={row[value_idx]}"
-        if used + len(block) > budget_chars:
-            remaining = budget_chars - used
-            if remaining > 0:
-                parts.append(block[:remaining])
-                used = budget_chars
-            break
-        parts.append(block)
-        used += len(block) + 1  # +1 for the joining newline below
+        fmap = bejson_core_get_field_map(doc)
+        name_idx = fmap.get("var_name", 0)
+        value_idx = fmap.get("var_value", 1)
+
+        for row in doc.get("Values", []):
+            if len(row) <= max(name_idx, value_idx):
+                continue
+            name = row[name_idx]
+            if not name:
+                continue
+            block = f"{name}={row[value_idx]}"
+            if used + len(block) > budget_chars:
+                remaining = budget_chars - used
+                if remaining > 0:
+                    parts.append(block[:remaining])
+                    used = budget_chars
+                return "\n".join(parts), used
+            parts.append(block)
+            used += len(block) + 1  # +1 for the joining newline below
     return "\n".join(parts), used
 
 
@@ -463,33 +737,66 @@ def build_env_file_section(env_file_path: Path, turn: int, interval: int, budget
 def build_cwd_context_section(cwd: Path, budget_chars: int) -> tuple[str, int]:
     """
     Checks the CURRENT working directory (re-evaluated every turn — cwd can
-    change mid-session via /cd or a shell `cd`) for context.bejson. If it
-    exists, it's always included — no keyword trigger, no cooldown, no
-    opt-in. It's still capped to its reserved budget slice like every other
-    section, though: "no choice" means the client doesn't get to skip it,
-    not that it can blow past its allotment and starve everything else.
+    change mid-session via /cd or a shell `cd`) for context.bejson, AND
+    every ancestor directory above it, all the way to the filesystem root.
+    If it exists anywhere in that chain, it's always included — no keyword
+    trigger, no cooldown, no opt-in. Still capped to its reserved budget
+    slice like every other section: "no choice" means the client doesn't
+    get to skip it, not that it can blow past its allotment and starve
+    everything else.
+
+    2026-08-17 (Elton's request): matches how GEMINI.md/CLAUDE.md/AGENTS.md
+    work in Gemini CLI, Antigravity, etc. -- a context file placed at, say,
+    /storage/emulated/0/context.bejson applies everywhere underneath it too,
+    including /storage/emulated/0/Pictures, not just in the exact directory
+    NewAgent happens to be sitting in. Merge order is root-to-leaf (broadest
+    first, nearest/most specific last): if the same section name shows up
+    at more than one level (e.g. every directory in a repo declaring
+    "Rules"), the NEAREST directory's version wins and replaces the
+    broader one entirely, the same way a more specific CSS rule overrides
+    a general one -- it does not concatenate both. tools/NA-Init/CLI_Init.py
+    and the context_set action still write to exactly one directory's own
+    context.bejson (that part is unchanged and correct as-is); only the
+    READ side now walks the chain.
     """
     if budget_chars <= 0:
         return "", 0
-    fpath = Path(cwd) / CWD_CONTEXT_FILENAME
-    if not fpath.exists():
+    cwd = Path(cwd).resolve()
+    ancestors_root_first = list(reversed(list(cwd.parents))) + [cwd]
+
+    sections: dict[str, str] = {}
+    order: list[str] = []  # first-seen position is kept even when overridden
+    for d in ancestors_root_first:
+        fpath = d / CWD_CONTEXT_FILENAME
+        if not fpath.exists():
+            continue
+        doc = bejson_core_load_file(str(fpath))
+        if not isinstance(doc, dict):
+            continue
+        result = validate_bejson(doc, is_file=False)
+        if not result.valid:
+            logger.warning("[ContextBubble] %s failed structural validation: %s", fpath, result.errors)
+            continue
+        fmap = bejson_core_get_field_map(doc)
+        section_idx = fmap.get("section", 0)
+        content_idx = fmap.get("content", 1)
+        for row in doc.get("Values", []):
+            if len(row) <= max(section_idx, content_idx):
+                continue
+            name = row[section_idx]
+            if not name:
+                continue
+            if name not in sections:
+                order.append(name)
+            sections[name] = row[content_idx]  # nearer dir overwrites, keeps position
+
+    if not sections:
         return "", 0
-    doc = bejson_core_load_file(str(fpath))
-    if not isinstance(doc, dict):
-        return "", 0
-    result = validate_bejson(doc, is_file=False)
-    if not result.valid:
-        logger.warning("[ContextBubble] %s failed structural validation: %s", fpath, result.errors)
-    fmap = bejson_core_get_field_map(doc)
-    section_idx = fmap.get("section", 0)
-    content_idx = fmap.get("content", 1)
 
     parts = []
     used = 0
-    for row in doc.get("Values", []):
-        if len(row) <= max(section_idx, content_idx):
-            continue
-        block = f"[{row[section_idx]}]\n{row[content_idx]}"
+    for name in order:
+        block = f"[{name}]\n{sections[name]}"
         if used + len(block) > budget_chars:
             remaining = budget_chars - used
             if remaining > 0:
@@ -572,6 +879,51 @@ def init_cwd_context_template(cwd: str) -> tuple[bool, str]:
     return True, f"Created {fpath} — add rows with [\"section\", \"content\"] and it'll auto-inject every turn."
 
 
+def upsert_cwd_context_section(cwd: str, section: str, content: str) -> tuple[bool, str]:
+    """
+    Sets one (section, content) row in cwd's context.bejson -- creates the
+    file first (same schema as init_cwd_context_template) if it doesn't
+    exist yet, so this is always safe to call directly without a separate
+    /init step first. Upsert semantics: a row whose section already matches
+    (case-sensitive) has its content REPLACED, not duplicated -- calling
+    this twice with the same section is how you correct/update it, not how
+    you accumulate two rows for the same topic.
+
+    2026-08-16 (Elton's INIT request): this is the shared engine behind
+    both the standalone tools/NA-Init/CLI_Init.py CLI (for scaffolding a
+    project from outside a running NewAgent session) and the instruction in
+    Persistent_Policy.md telling the in-session model to call this same
+    upsert whenever the user hands it a project's purpose or ground rules,
+    so that context survives beyond conversational memory / Amnesia.
+    """
+    fpath = Path(cwd) / CWD_CONTEXT_FILENAME
+    if fpath.exists():
+        doc = bejson_core_load_file(str(fpath))
+        if not isinstance(doc, dict):
+            return False, f"{fpath} exists but isn't readable as BEJSON -- fix or delete it first."
+    else:
+        doc = bejson_core_create_104a("CwdContext", list(_CWD_CONTEXT_FIELDS), [])
+
+    fmap = bejson_core_get_field_map(doc)
+    section_idx = fmap.get("section", 0)
+    content_idx = fmap.get("content", 1)
+
+    for row in doc.get("Values", []):
+        if len(row) > section_idx and row[section_idx] == section:
+            row[content_idx] = content
+            break
+    else:
+        doc.setdefault("Values", []).append([section, content])
+
+    result = validate_bejson(doc, is_file=False)
+    if not result.valid:
+        return False, f"Refusing to write -- resulting {fpath} would be invalid: {'; '.join(result.errors)}"
+
+    if not bejson_core_atomic_write(str(fpath), doc):
+        return False, f"Atomic write failed for {fpath}."
+    return True, f"Set [{section}] in {fpath}."
+
+
 # ── Assembly entrypoint ──────────────────────────────────────────────────────
 
 def build_minimal_bubble(context_dir: Path, config_dir: Path) -> dict:
@@ -612,7 +964,7 @@ def assemble_bubble(
     turn: int,
     cooldown_state: dict[str, float],
     cwd: str = ".",
-    env_file_path: str = "",
+    env_file_paths: list[str] = None,
 ) -> dict:
     """
     Builds the full bubble content in memory (one atomic write at the end,
@@ -639,7 +991,7 @@ def assemble_bubble(
         active_tasks_text, active_tasks_used = build_active_tasks_section(cwd, active_tasks_budget)
         cwd_text, cwd_used = build_cwd_context_section(Path(cwd), cwd_budget)
         env_file_text, env_file_used = build_env_file_section(
-            Path(env_file_path) if env_file_path else Path(""),
+            [Path(p) for p in (env_file_paths or [])],
             turn, constants.get("knowledge_drip_interval", 5), env_file_budget,
         )
 
@@ -665,7 +1017,8 @@ def assemble_bubble(
     if cwd_text:
         sections.append(f"## Project Context ({cwd})\n{cwd_text}")
     if env_file_text:
-        sections.append(f"## Environment ({env_file_path})\n{env_file_text}")
+        sources_label = ", ".join(str(p) for p in (env_file_paths or []))
+        sections.append(f"## Environment ({sources_label})\n{env_file_text}")
     if keyword_text:
         sections.append(f"## Keyword Triggers\n{keyword_text}")
     if knowledge_text:

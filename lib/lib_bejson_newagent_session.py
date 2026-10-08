@@ -2,13 +2,73 @@
 Library:        lib_bejson_newagent_session.py
 Family:         NewAgent
 Description:    Atomic session logger, resume file persistence, named session archiving.
-Version:        2.4.0
-Date:           2026-07-25
+Version:        2.7.0
+Date:           2026-09-18
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  cbbe0ec2-4c3d-4bac-aeca-00d3c89e171c
+RELATIONAL_ID:  4e3130b9-3ccc-45c2-9eed-fa37fe0988f2
+
+CHANGELOG:
+- 2.7.0 (2026-09-18): Remediation pass, audit finding #3 (Field-Map
+  Fallback Landmine) plus a self-caught bug. (1) Added `import logging`
+  -- this file called `logging.getLogger(__name__)` in 6 places but never
+  imported the module, so every one of those error-log calls (mostly
+  inside except blocks) would itself raise NameError, masking the
+  original error being logged. (2) Added _require_field(fmap, name):
+  every one of the 34 `fmap.get(name, hardcoded_index)` calls in this
+  file silently fell back to a positional literal if the field-map
+  lookup missed -- defeating Field Map Cache (policy Sec 6.2) and risking
+  a silent miswrite into the wrong column on a drifted/foreign doc. All
+  34 now route through _require_field, which raises a clear KeyError
+  naming the missing field and the doc's actual known fields instead of
+  guessing. Tradeoff, noted for the record: a genuinely corrupt/legacy
+  row that's missing a field will now raise instead of silently
+  (mis)writing -- correct per policy intent (loud > silent), but callers
+  relying on the old silent-degrade behavior will need to catch this if
+  graceful skip is ever wanted instead of a hard failure; none of this
+  file's own call sites currently do, so today it surfaces as an
+  uncaught exception out of log_turn_relational()/update_last_bubble()/
+  etc. Verified: py_compile clean; manual field-map-with-missing-key
+  test confirms the new KeyError message and that a healthy fmap
+  (this module's own schemas) is unaffected.
+- 2.6.0 (2026-08-18): Logging System rework, per Elton's request. (1) No
+  more automatic markdown generation -- __init__ and log() no longer call
+  _regenerate_human_log; a .md file is now only ever produced on demand via
+  the new /logs2md command (lib_bejson_newagent_commands.py) or by calling
+  convert_session_to_markdown() directly, which also zips the result with a
+  conversion timestamp in the filename. (2) Added timestamp_iso (full
+  ISO-8601 date+time) to _TRANSCRIPT_FIELDS, appended at the end --
+  positional integrity preserved, the original short HH:MM:SS "timestamp"
+  field is untouched. The markdown renderer now shows the full ISO
+  timestamp when present, falling back to the short one for any row logged
+  before this field existed. (3) Added archive_old_session_logs(logs_dir,
+  keep_recent=3) -- called once at agent.py startup (mirrors
+  jobs.cleanup_old_completed_jobs's existing pattern): keeps the
+  keep_recent most recent sessions' files exactly where they are, bundles
+  every older session's full sibling set (.bejson transcript, .104db.bejson
+  relational store, and .md/_md_*.zip if one was ever manually made) into
+  one zip per session under logs/archive/, then removes the originals.
+  _regenerate_human_log's rendering logic was extracted into module-level
+  _render_transcript_markdown() so the (now manual-only) instance method
+  and the new standalone convert_session_to_markdown() -- which needs to
+  work on an arbitrary, possibly-already-archived .bejson with no
+  SessionLogger instance at all -- share one renderer instead of a second
+  copy that could drift. VERSION MISMATCH NOTED AND RESOLVED: this file's
+  header docstring said 2.4.0 while the VERSION variable already said
+  2.5.0 (predates this change) -- adopted 2.5.0 as the more-advanced base
+  per policy and bumped both to 2.6.0 together so they can't drift again.
+  Verified: no .md exists right after init or after a log() call; a manual
+  /logs2md-equivalent conversion produces the .md and a timestamped zip;
+  timestamp_iso is populated and ISO-shaped; archive_old_session_logs
+  correctly keeps 3 recent untouched, correctly bundles the 3 oldest
+  (including their .md sibling) into logs/archive/*.zip and removes the
+  originals, and is idempotent (no-op on immediate re-run); fixed a bug
+  found during testing where the transcript glob (session_*.bejson) was
+  also matching the *.104db.bejson sibling, corrupting session grouping --
+  caught by the test before shipping, not after.
 """
 
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -25,7 +85,7 @@ from lib_bejson_Core_bejson_core import (
 )
 from lib_bejson_Core_bejson_validator import validate_bejson
 
-VERSION = "2.5.0"
+VERSION = "2.7.0"
 
 _SESSION_INDEX_FIELDS = [
     {"name": "label", "type": "string"},
@@ -45,7 +105,28 @@ _TRANSCRIPT_FIELDS = [
     {"name": "keyword_tokens", "type": "integer"},
     {"name": "knowledge_tokens", "type": "integer"},
     {"name": "observer_note", "type": "string"},
+    {"name": "timestamp_iso", "type": "string"},
 ]
+
+
+def _require_field(fmap: dict, name: str) -> int:
+    """Remediation pkg (audit finding #3): every field-map lookup in this
+    file used to be `fmap.get(name, hardcoded_index)` -- a schema drift or
+    a stale/foreign row (fmap missing `name`) silently fell back to a
+    positional literal instead of raising, which is exactly what Field Map
+    Cache (policy Sec 6.2) exists to prevent: the fallback index could
+    point at an entirely different field on a mismatched doc and corrupt
+    it silently with no error at all. This raises a clear, specific error
+    instead so a schema mismatch is loud and diagnosable rather than a
+    quiet miswrite.
+    """
+    if name not in fmap:
+        raise KeyError(
+            f"[Session] Field '{name}' missing from field map "
+            f"(schema drift or corrupt/foreign doc) -- known fields: {sorted(fmap.keys())}"
+        )
+    return fmap[name]
+
 
 # ── BEJSON 104db Relational Schemas ──────────────────────────────────────────
 
@@ -80,6 +161,127 @@ _104DB_FIELDS = [
     {"name": "timestamp_action", "type": "string", "Record_Type_Parent": "Action"},
 ]
 
+def _render_transcript_markdown(session_name: str, rows: list[list]) -> str:
+    """
+    Shared rendering engine for both SessionLogger's (now manual-only)
+    regeneration and the standalone convert_session_to_markdown() below --
+    one renderer, so the on-disk .bejson transcript is always the single
+    source of truth and the .md is always a faithful, never hand-edited,
+    derivation of it. Uses timestamp_iso (full date+time) in the header
+    when present, falling back to the short HH:MM:SS timestamp for any
+    older log row logged before that field existed.
+    """
+    lines = [f"# NewAgent Session — {session_name}\n"]
+    for row in rows:
+        if len(row) < 11:
+            continue
+        ts, role, content, bubble_content, policy_tok, active_tasks_tok, env_tok, cwd_tok, keyword_tok, knowledge_tok, note = row[:11]
+        ts_iso = row[11] if len(row) > 11 and row[11] else ts
+        lines.append(f"### [{ts_iso}] [{(role or '').upper()}]")
+        lines.append(content or "")
+        if bubble_content:
+            lines.append("")
+            lines.append(
+                f"<details><summary>Context Bubble — "
+                f"policy:{policy_tok} tasks:{active_tasks_tok} env:{env_tok} cwd:{cwd_tok} keyword:{keyword_tok} knowledge:{knowledge_tok}"
+                f"{f' — {note}' if note else ''}</summary>\n"
+            )
+            lines.append("```")
+            lines.append(bubble_content)
+            lines.append("```")
+            lines.append("</details>")
+        lines.append("\n---\n")
+    return "\n".join(lines)
+
+
+def convert_session_to_markdown(bejson_log_path: Path) -> tuple[bool, str]:
+    """
+    On-demand markdown conversion, per Elton's Logging System request:
+    "make the user type a command to convert the logs to markdown... No
+    more automatic markdown log generation." SessionLogger no longer
+    writes a .md file on its own (see __init__ and log() above) -- this is
+    now the only path that produces one, and it's paired with a timestamped
+    zip of the result. Standalone/module-level (not a SessionLogger method)
+    so it works on ANY session_*.bejson, including an already-archived one,
+    not just the live session currently being logged.
+    """
+    bejson_log_path = Path(bejson_log_path)
+    if not bejson_log_path.exists():
+        return False, f"{bejson_log_path} does not exist."
+    doc = bejson_core_load_file(str(bejson_log_path))
+    if not isinstance(doc, dict):
+        return False, f"{bejson_log_path} isn't readable as BEJSON."
+
+    md_path = bejson_log_path.with_suffix(".md")
+    md_text = _render_transcript_markdown(bejson_log_path.stem, doc.get("Values", []))
+    try:
+        md_path.write_text(md_text, encoding="utf-8")
+    except Exception as exc:
+        return False, f"Failed writing {md_path}: {exc}"
+
+    conv_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    zip_path = bejson_log_path.parent / f"{bejson_log_path.stem}_md_{conv_ts}.zip"
+    try:
+        import zipfile
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.write(md_path, arcname=md_path.name)
+    except Exception as exc:
+        return False, f"Wrote {md_path} but zip failed: {exc}"
+
+    return True, f"Converted {bejson_log_path.name} -> {md_path.name}, zipped as {zip_path.name}"
+
+
+def archive_old_session_logs(logs_dir: Path, keep_recent: int = 3) -> list[str]:
+    """
+    Elton's request: "Any logs over 3 sessions ago should be automatically
+    zipped and moved to an archive logs/archive subfolder." Session files
+    sort chronologically by filename already (session_YYYY-MM-DD_HH-MM-SS.*)
+    so no extra timestamp parsing is needed for ordering. Keeps the
+    keep_recent most recent sessions' files exactly where they are; every
+    older session's full file set (.bejson transcript, .104db.bejson
+    relational store, and .md/_md_*.zip if a manual conversion was ever
+    done) gets bundled into one zip per session under logs/archive/ and the
+    originals removed. Call once at startup (mirrors
+    jobs.cleanup_old_completed_jobs's pattern) -- cheap no-op glob when
+    there's nothing to do. Returns the list of session stems archived.
+    """
+    logs_dir = Path(logs_dir)
+    if not logs_dir.is_dir():
+        return []
+    transcripts = sorted(
+        (p for p in logs_dir.glob("session_*.bejson") if not p.name.endswith(".104db.bejson")),
+        reverse=True,
+    )  # newest first; excludes the .104db.bejson sibling, which has its own "session_*.bejson" glob hit otherwise
+    stale = transcripts[keep_recent:]
+    if not stale:
+        return []
+
+    archive_dir = logs_dir / "archive"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+
+    import zipfile
+    archived = []
+    for transcript_path in stale:
+        stem = transcript_path.stem  # e.g. "session_2026-08-10_09-30-00"
+        siblings = sorted(logs_dir.glob(f"{stem}*"))  # .bejson, .104db.bejson, .md, _md_*.zip
+        if not siblings:
+            continue
+        zip_path = archive_dir / f"{stem}.zip"
+        try:
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for f in siblings:
+                    zf.write(f, arcname=f.name)
+            for f in siblings:
+                f.unlink()
+            archived.append(stem)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error(
+                "[Session] Failed archiving %s: %s", stem, exc
+            )
+    return archived
+
+
 class SessionLogger:
     """
     Crash-safe session transcript, one BEJSON row per logged message.
@@ -111,7 +313,6 @@ class SessionLogger:
         # 1. Init 104a transcript
         doc = bejson_core_create_104a("Transcript", list(_TRANSCRIPT_FIELDS), [])
         bejson_core_atomic_write(str(self.log_path), doc)
-        self._regenerate_human_log([])
 
         # 2. Init 104db relational store
         import uuid
@@ -140,32 +341,19 @@ class SessionLogger:
 
     def _regenerate_human_log(self, rows: list[list]) -> None:
         """
-        The BEJSON table is the queryable source of truth; this is a plain,
-        skimmable rendering of it, fully rebuilt from those same rows every
-        time — never hand-maintained separately, so it can't drift out of
-        sync with the data it's derived from.
+        Manual-only now (see Elton's Logging System request) -- kept as an
+        instance method purely so anything that already held a reference to
+        a live SessionLogger can still force a regen of the CURRENT session
+        specifically without needing its own path lookup. The actual
+        rendering logic lives in the module-level _render_transcript_markdown
+        so convert_session_to_markdown() (which needs to work on arbitrary,
+        possibly-archived .bejson files with no SessionLogger instance at
+        all) shares the exact same output instead of a parallel copy that
+        could drift.
         """
-        lines = [f"# NewAgent Session — {self.log_path.stem}\n"]
-        for row in rows:
-            if len(row) < 11:
-                continue
-            ts, role, content, bubble_content, policy_tok, active_tasks_tok, env_tok, cwd_tok, keyword_tok, knowledge_tok, note = row[:11]
-            lines.append(f"### [{ts}] [{(role or '').upper()}]")
-            lines.append(content or "")
-            if bubble_content:
-                lines.append("")
-                lines.append(
-                    f"<details><summary>Context Bubble — "
-                    f"policy:{policy_tok} tasks:{active_tasks_tok} env:{env_tok} cwd:{cwd_tok} keyword:{keyword_tok} knowledge:{knowledge_tok}"
-                    f"{f' — {note}' if note else ''}</summary>\n"
-                )
-                lines.append("```")
-                lines.append(bubble_content)
-                lines.append("```")
-                lines.append("</details>")
-            lines.append("\n---\n")
+        md_text = _render_transcript_markdown(self.log_path.stem, rows)
         try:
-            self.human_log_path.write_text("\n".join(lines), encoding="utf-8")
+            self.human_log_path.write_text(md_text, encoding="utf-8")
         except Exception as exc:
             import logging
             logging.getLogger(__name__).error(
@@ -187,6 +375,7 @@ class SessionLogger:
         observer_note: str = "",
     ) -> None:
         ts = ts or datetime.now().strftime("%H:%M:%S")
+        ts_iso = datetime.now().isoformat()
         with self._lock:
             rows = []
             if self.log_path.exists():
@@ -196,6 +385,7 @@ class SessionLogger:
             rows.append([
                 ts, role, content, bubble_content,
                 policy_tokens, active_tasks_tokens, env_file_tokens, cwd_tokens, keyword_tokens, knowledge_tokens, observer_note,
+                ts_iso,
             ])
             new_doc = bejson_core_create_104a("Transcript", list(_TRANSCRIPT_FIELDS), rows)
             if not bejson_core_atomic_write(str(self.log_path), new_doc):
@@ -203,7 +393,6 @@ class SessionLogger:
                 logging.getLogger(__name__).error(
                     "[Session] Atomic write failed for %s", self.log_path
                 )
-            self._regenerate_human_log(rows)
 
     def log_turn_relational(
         self,
@@ -236,23 +425,23 @@ class SessionLogger:
             # 2. Update Session entity row (row 0)
             if rows and rows[0][0] == "Session":
                 sess_row = rows[0]
-                sess_row[fmap.get("model_used", 3)] = model_used
-                sess_row[fmap.get("total_input_tokens", 4)] = (sess_row[fmap.get("total_input_tokens", 4)] or 0) + input_tokens
-                sess_row[fmap.get("total_output_tokens", 5)] = (sess_row[fmap.get("total_output_tokens", 5)] or 0) + output_tokens
-                sess_row[fmap.get("total_turns", 6)] = self._turn_counter
+                sess_row[_require_field(fmap, "model_used")] = model_used
+                sess_row[_require_field(fmap, "total_input_tokens")] = (sess_row[_require_field(fmap, "total_input_tokens")] or 0) + input_tokens
+                sess_row[_require_field(fmap, "total_output_tokens")] = (sess_row[_require_field(fmap, "total_output_tokens")] or 0) + output_tokens
+                sess_row[_require_field(fmap, "total_turns")] = self._turn_counter
 
             # 3. Create Turn entity row
             turn_row = [None] * len(_104DB_FIELDS)
             turn_row[0] = "Turn"
-            turn_row[fmap.get("turn_id", 7)] = turn_id
-            turn_row[fmap.get("session_fk", 8)] = self.session_guid
-            turn_row[fmap.get("turn_index", 9)] = self._turn_counter
-            turn_row[fmap.get("prompt_text", 10)] = prompt_text[:2000]
-            turn_row[fmap.get("response_text", 11)] = response_text[:5000]
-            turn_row[fmap.get("input_tokens", 12)] = input_tokens
-            turn_row[fmap.get("output_tokens", 13)] = output_tokens
-            turn_row[fmap.get("duration_ms", 14)] = round(duration_ms, 2)
-            turn_row[fmap.get("timestamp_turn", 15)] = now_iso
+            turn_row[_require_field(fmap, "turn_id")] = turn_id
+            turn_row[_require_field(fmap, "session_fk")] = self.session_guid
+            turn_row[_require_field(fmap, "turn_index")] = self._turn_counter
+            turn_row[_require_field(fmap, "prompt_text")] = prompt_text[:2000]
+            turn_row[_require_field(fmap, "response_text")] = response_text[:5000]
+            turn_row[_require_field(fmap, "input_tokens")] = input_tokens
+            turn_row[_require_field(fmap, "output_tokens")] = output_tokens
+            turn_row[_require_field(fmap, "duration_ms")] = round(duration_ms, 2)
+            turn_row[_require_field(fmap, "timestamp_turn")] = now_iso
             rows.append(turn_row)
 
             # 4. Create Action entity rows
@@ -266,13 +455,13 @@ class SessionLogger:
 
                     act_row = [None] * len(_104DB_FIELDS)
                     act_row[0] = "Action"
-                    act_row[fmap.get("action_id", 16)] = act_id
-                    act_row[fmap.get("turn_fk", 17)] = turn_id
-                    act_row[fmap.get("action_type", 18)] = str(act_type)
-                    act_row[fmap.get("action_source", 19)] = str(act_source)[:1000]
-                    act_row[fmap.get("exit_code", 20)] = int(exit_code or 0)
-                    act_row[fmap.get("output_bytes", 21)] = len(str(output_str or "").encode("utf-8"))
-                    act_row[fmap.get("timestamp_action", 22)] = now_iso
+                    act_row[_require_field(fmap, "action_id")] = act_id
+                    act_row[_require_field(fmap, "turn_fk")] = turn_id
+                    act_row[_require_field(fmap, "action_type")] = str(act_type)
+                    act_row[_require_field(fmap, "action_source")] = str(act_source)[:1000]
+                    act_row[_require_field(fmap, "exit_code")] = int(exit_code or 0)
+                    act_row[_require_field(fmap, "output_bytes")] = len(str(output_str or "").encode("utf-8"))
+                    act_row[_require_field(fmap, "timestamp_action")] = now_iso
                     rows.append(act_row)
 
             db_doc["Values"] = rows
@@ -322,14 +511,14 @@ class SessionLogger:
             rows = doc.get("Values", [])
             if not rows:
                 return
-            bubble_idx = fmap.get("bubble_content", 3)
-            policy_idx = fmap.get("policy_tokens", 4)
-            active_tasks_idx = fmap.get("active_tasks_tokens", 5)
-            env_file_idx = fmap.get("env_file_tokens", 6)
-            cwd_idx = fmap.get("cwd_tokens", 7)
-            keyword_idx = fmap.get("keyword_tokens", 8)
-            knowledge_idx = fmap.get("knowledge_tokens", 9)
-            note_idx = fmap.get("observer_note", 10)
+            bubble_idx = _require_field(fmap, "bubble_content")
+            policy_idx = _require_field(fmap, "policy_tokens")
+            active_tasks_idx = _require_field(fmap, "active_tasks_tokens")
+            env_file_idx = _require_field(fmap, "env_file_tokens")
+            cwd_idx = _require_field(fmap, "cwd_tokens")
+            keyword_idx = _require_field(fmap, "keyword_tokens")
+            knowledge_idx = _require_field(fmap, "knowledge_tokens")
+            note_idx = _require_field(fmap, "observer_note")
             row = rows[-1]
             row[bubble_idx] = bubble_content
             row[policy_idx] = policy_tokens
@@ -396,7 +585,7 @@ def archive_named_session(index_path: Path, label: str, log_path: Path) -> None:
                     "[Session] %s failed structural validation: %s", index_path, result.errors
                 )
             fmap = bejson_core_get_field_map(doc)
-            label_idx = fmap.get("label", 0)
+            label_idx = _require_field(fmap, "label")
             rows = doc.get("Values", [])
 
     rows = [r for r in rows if len(r) <= label_idx or r[label_idx] != label]
@@ -414,9 +603,9 @@ def list_named_sessions(index_path: Path) -> list[dict]:
     if not isinstance(doc, dict):
         return []
     fmap = bejson_core_get_field_map(doc)
-    label_idx = fmap.get("label", 0)
-    log_idx = fmap.get("log_path", 1)
-    saved_idx = fmap.get("saved_at", 2)
+    label_idx = _require_field(fmap, "label")
+    log_idx = _require_field(fmap, "log_path")
+    saved_idx = _require_field(fmap, "saved_at")
     out = []
     for row in doc.get("Values", []):
         if len(row) <= max(label_idx, log_idx, saved_idx):
