@@ -91,6 +91,9 @@
 ![Newagent System Architecture   Slide 1](images/NewAgent_System_Architecture_-_Slide_1.png)
 
 
+![Newagent System Architecture   Slide 1](images/NewAgent_System_Architecture_-_Slide_1.png)
+
+
 ---
 
 ## Introduction
@@ -164,6 +167,9 @@ The essence of NewAgent is to serve as an **autonomous, verifiable, and safe dev
 - **Web Terminal & Inspection Surface (`webagent.py`):** Hosting a single-port local web dashboard providing live chat terminal controls, file browsing, job card status inspection, and subagent session tracking.
 
 ### Advanced & Enterprise Use Cases
+
+
+![Newagent System Architecture   Slide 10](images/NewAgent_System_Architecture_-_Slide_10.png)
 
 
 ![Newagent System Architecture   Slide 10](images/NewAgent_System_Architecture_-_Slide_10.png)
@@ -254,6 +260,9 @@ NewAgent/
 
 ![Newagent System Architecture   Slide 11](images/NewAgent_System_Architecture_-_Slide_11.png)
 
+![Newagent System Architecture   Slide 11](images/NewAgent_System_Architecture_-_Slide_11.png)
+
+
 
 ---
 
@@ -339,6 +348,9 @@ Manage subagent profiles, inspect active subagent execution sessions, and monito
 ![Newagent System Architecture   Slide 12](images/NewAgent_System_Architecture_-_Slide_12.png)
 
 
+![Newagent System Architecture   Slide 12](images/NewAgent_System_Architecture_-_Slide_12.png)
+
+
 ```bash
 # List all registered subagent profiles
 python3 subagent_admin.py list-profiles
@@ -419,6 +431,9 @@ flowchart TD
 
     Resolver --> ContextBubble
     ContextBubble --> EngineRouter
+
+
+![Newagent System Architecture   Slide 13](images/NewAgent_System_Architecture_-_Slide_13.png)
 
 
 ![Newagent System Architecture   Slide 13](images/NewAgent_System_Architecture_-_Slide_13.png)
@@ -508,6 +523,9 @@ MFDB federates multiple BEJSON entity files using a root manifest file (`bejson_
 
 ![Newagent System Architecture   Slide 14](images/NewAgent_System_Architecture_-_Slide_14.png)
 
+
+![Newagent System Architecture   Slide 14](images/NewAgent_System_Architecture_-_Slide_14.png)
+
 {
   "Format": "BEJSON",
   "Format_Version": "104a.mfdb",
@@ -593,6 +611,9 @@ To optimize prompt tokens, NewAgent scans user inputs for trigger keywords defin
 
 ![Newagent System Architecture   Slide 15](images/NewAgent_System_Architecture_-_Slide_15.png)
 
+
+![Newagent System Architecture   Slide 15](images/NewAgent_System_Architecture_-_Slide_15.png)
+
     ["jobmaker", "kb://jobmaker_workflow_spec", 2]
   ]
 }
@@ -675,6 +696,9 @@ Jobs are defined using Elton Boehnen's 104a Job Schema (`lib/lib_bejson_newagent
   "Format": "BEJSON",
   "Format_Version": "104a",
   "Format_Creator": "Elton Boehnen",
+
+![Newagent System Architecture   Slide 2](images/NewAgent_System_Architecture_-_Slide_2.png)
+
 
 ![Newagent System Architecture   Slide 2](images/NewAgent_System_Architecture_-_Slide_2.png)
 
@@ -764,6 +788,9 @@ NewAgent reads API keys and filesystem paths from canonical environment files:
 
 ![Newagent System Architecture   Slide 3](images/NewAgent_System_Architecture_-_Slide_3.png)
 
+![Newagent System Architecture   Slide 3](images/NewAgent_System_Architecture_-_Slide_3.png)
+
+
 
 Setup directory structure and template files:
 
@@ -843,6 +870,9 @@ python3 tools/NA-Init/CLI_Init.py init
 ---
 
 ## Performance & Benchmark Metrics
+
+![Newagent System Architecture   Slide 4](images/NewAgent_System_Architecture_-_Slide_4.png)
+
 
 ![Newagent System Architecture   Slide 4](images/NewAgent_System_Architecture_-_Slide_4.png)
 
