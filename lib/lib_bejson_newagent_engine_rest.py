@@ -5,12 +5,15 @@ Description:    REST API prompter with rotating key and cooldown registry.
                 Key/model/cooldown registries routed through the canonical
                 Core BEJSON library (atomic write + validation + field-map
                 access) instead of hand-rolled json.load/dump.
-Version:        1.20.0
+Version:        1.21.0
 Date:           2026-10-14
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  ec198302-d90c-4fa2-bf6e-6cb169d273a1
+RELATIONAL_ID:  2208bc30-41e1-424d-8bb4-b76433923510
 
 CHANGELOG:
+- 1.21.0 (2026-10-14): Added is_openrouter_free_model(), fetch_openrouter_free_models(),
+  and sync_openrouter_free_models_to_catalog() matching CLI_AI's dynamic free-tier discovery
+  logic (zero pricing prompt/completion and :free/-free suffixes).
 - 1.20.0 (2026-10-14): Fixed provider key sync in _get_key_registry() to call
   sync_keys_from_env_sources() instead of sync_keys_from_env_file() on the non-existent
   legacy env_file_path. Updated PROVIDER_ENV_KEY_PREFIX["openrouter"] to "OPENROUTER_KEY_"
@@ -194,7 +197,7 @@ from lib_bejson_newagent_key_ledger import (
     key_ledger_short_hash,
 )
 
-VERSION = "1.20.0"
+VERSION = "1.21.0"
 logger = logging.getLogger(__name__)
 
 COOLDOWN_429 = 60
@@ -1769,3 +1772,129 @@ def check_catalog_key_expiry(catalog: list[dict], warn_within_days: int = 7) -> 
         elif days_left <= warn_within_days:
             warnings.append(f"{name}: key expires in {days_left} day(s) ({raw_date}) -- plan a replacement soon.")
     return warnings
+
+
+def is_openrouter_free_model(model: dict) -> bool:
+    """Check if an OpenRouter model record is 100% free tier.
+    Matches CLI_AI's detection logic:
+    1. Authoritative check: prompt_cost == 0.0 and completion_cost == 0.0 in pricing object.
+    2. Fallback check: model ID ends with ':free' or '-free', or is 'openrouter/free'.
+    Excludes non-text/per-request non-zero charges (e.g. music/image generation).
+    """
+    model_id = str(model.get("id", ""))
+    if model_id.endswith(":free") or model_id.endswith("-free") or model_id == "openrouter/free":
+        return True
+
+    pricing = model.get("pricing") or {}
+    try:
+        prompt_cost = float(pricing.get("prompt", "1") or "1")
+        completion_cost = float(pricing.get("completion", "1") or "1")
+        desc = (model.get("description") or "").lower()
+        if prompt_cost == 0.0 and completion_cost == 0.0:
+            if "priced at" not in desc and "$0." not in desc and "per song" not in desc and "per image" not in desc:
+                return True
+    except (TypeError, ValueError):
+        pass
+    return False
+
+
+def fetch_openrouter_free_models(api_key: Optional[str] = None, timeout: float = 15.0) -> list[dict]:
+    """Pull live model catalog from OpenRouter GET https://openrouter.ai/api/v1/models
+    and filter for free-tier models only. Returns a list of dicts:
+    [{'id': str, 'name': str, 'description': str, 'context_length': int}]
+    """
+    url = "https://openrouter.ai/api/v1/models"
+    headers = {"User-Agent": "NewAgent/3.41.0"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            models = data.get("data", [])
+            free_models = []
+            for m in models:
+                if m.get("id") and is_openrouter_free_model(m):
+                    free_models.append({
+                        "id": m["id"],
+                        "name": m.get("name") or m["id"],
+                        "description": m.get("description") or "OpenRouter free model tier.",
+                        "context_length": m.get("context_length") or 0,
+                    })
+            return free_models
+    except Exception as e:
+        logger.warning(f"[OpenRouter] Failed to fetch live models: {e}")
+        return []
+
+
+def sync_openrouter_free_models_to_catalog(catalog_path: Path, api_key: Optional[str] = None) -> tuple[bool, int, str]:
+    """Dynamically pull live free models from OpenRouter and sync them into
+    the BEJSON 104a catalog at catalog_path.
+    Preserves all Gemini and static non-free rows, replacing only the
+    ephemeral/free OpenRouter entries.
+    Returns (success: bool, count: int, message: str).
+    """
+    if not catalog_path.exists():
+        return False, 0, f"Catalog file not found: {catalog_path}"
+
+    doc = bejson_core_load_file(str(catalog_path))
+    if not isinstance(doc, dict) or "Values" not in doc:
+        return False, 0, f"Invalid BEJSON catalog at {catalog_path}"
+
+    fmap = bejson_core_get_field_map(doc)
+    required_fields = ["model_number", "model_string", "display_name", "tier", "status", "notes", "api_profile", "provider", "key_valid_through"]
+    for rf in required_fields:
+        if rf not in fmap:
+            return False, 0, f"Missing required catalog field: {rf}"
+
+    # Fetch live free models from OpenRouter
+    free_models = fetch_openrouter_free_models(api_key=api_key)
+    if not free_models:
+        return False, 0, "Failed to fetch live models from OpenRouter or no free models returned."
+
+    # Preserved rows are the core static catalog entries (rows 1-10: Gemini 1-8, Provocative 9, Claude 10)
+    preserved_rows = []
+    seen_strings = set()
+    for row in doc.get("Values", []):
+        num = row[fmap["model_number"]] if fmap["model_number"] < len(row) else 0
+        prov = row[fmap["provider"]] if fmap["provider"] < len(row) else ""
+        m_str = str(row[fmap["model_string"]] if fmap["model_string"] < len(row) else "")
+        if (prov != "openrouter" or m_str == "anthropic/claude-sonnet-5.5" or num <= 10) and m_str not in seen_strings:
+            preserved_rows.append(row)
+            seen_strings.add(m_str)
+
+    # Sort preserved rows by model_number
+    preserved_rows.sort(key=lambda r: r[fmap["model_number"]])
+    max_num = max(r[fmap["model_number"]] for r in preserved_rows) if preserved_rows else 0
+
+    # Build new rows for free models
+    num_fields = len(doc.get("Fields", []))
+    new_rows = list(preserved_rows)
+    for m in free_models:
+        if m["id"] in seen_strings:
+            continue
+        seen_strings.add(m["id"])
+        max_num += 1
+        new_row = [None] * num_fields
+        new_row[fmap["model_number"]] = max_num
+        new_row[fmap["model_string"]] = m["id"]
+        raw_name = m["name"]
+        disp_name = raw_name if "(free)" in raw_name.lower() or "(OpenRouter)" in raw_name else f"{raw_name} (OpenRouter)"
+        new_row[fmap["display_name"]] = disp_name
+        new_row[fmap["tier"]] = "flash"
+        new_row[fmap["status"]] = "GA"
+        notes = (m.get("description") or "OpenRouter free model tier.").replace("\n", " ")
+        if len(notes) > 120:
+            notes = notes[:117] + "..."
+        new_row[fmap["notes"]] = notes
+        new_row[fmap["api_profile"]] = "legacy"
+        new_row[fmap["provider"]] = "openrouter"
+        new_row[fmap["key_valid_through"]] = ""
+        new_rows.append(new_row)
+
+    doc["Values"] = new_rows
+    if not bejson_core_atomic_write(str(catalog_path), doc):
+        return False, 0, f"Failed to atomically write updated catalog to {catalog_path}"
+
+    return True, len(free_models), f"Synced {len(free_models)} free OpenRouter models into catalog"

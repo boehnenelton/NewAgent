@@ -2,12 +2,14 @@
 Library:        lib_bejson_newagent_commands.py
 Family:         NewAgent
 Description:    TUI slash command handler and helper displays.
-Version:        1.21.0
+Version:        1.22.0
 Date:           2026-10-14
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  d0c63257-dc19-4b37-97ff-ca4ce9e9a2d5
+RELATIONAL_ID:  6a15518c-db43-4162-a535-e9319ee41150
 
 CHANGELOG:
+- 1.22.0 (2026-10-14): Added /model sync and /model refresh to dynamically pull
+  100% free OpenRouter models into the catalog and assign menu numbers.
 - 1.21.0 (2026-10-14): Enhanced help text and catalog descriptions for OpenRouter model switching.
 - 1.20.0 (2026-10-14): Added provider routing awareness to /engine and /model.
   Blocks switching to Interactions engine if the active model uses a non-Gemini provider,
@@ -74,7 +76,7 @@ import lib_bejson_newagent_context_bubble as context_bubble
 import lib_bejson_newagent_engine_rest as rest
 import lib_bejson_newagent_jobs as jobs_lib
 
-VERSION = "1.21.0"
+VERSION = "1.22.0"
 
 HELP_COMMANDS: list[tuple[str, str]] = [
     ("/help", "Show this help reference"),
@@ -96,7 +98,7 @@ HELP_COMMANDS: list[tuple[str, str]] = [
     ("/restore", "Restore a file to its backed-up snapshot"),
     ("/sessions", "List archived sessions"),
     ("/keys", "API Keys manager (list/flag/deactivate/ledger)"),
-    ("/model", "Show model catalog or switch active model (Gemini & OpenRouter)"),
+    ("/model", "Show model catalog, switch model, or /model sync for free models"),
     ("/config", "Display active ScriptConfig parameters"),
     ("/stats", "Display session statistics"),
     ("/status", "Show circuit-breaker state, uptime, active key, current model"),
@@ -127,7 +129,7 @@ VERBOSE_HELP: dict[str, str] = {
     "/goto": "Usage: /goto <path>\nAlias for /cd. Change the agent\'s active working directory immediately.",
     "/export": "Usage: /export [path]\nExport the full conversation history to a Markdown file. If path is omitted, exports to current directory.",
     "/restore": "Usage: /restore <id>\nRestore a file to its backed-up snapshot using the ID from /backups.",
-    "/model": "Usage: /model [num|id]\nShow the model catalog or switch active model.\n  /model               - List all available models (Gemini & OpenRouter)\n  /model 10            - Switch to Claude Sonnet 5.5 (OpenRouter)\n  /model 11            - Switch to Liquid LFM 2.5 Free (OpenRouter)\n  /model <provider/id> - Switch to any OpenRouter model (e.g. meta-llama/llama-3.3-70b-instruct)\n  * Non-Gemini models automatically route through REST engine and use the OpenRouter key pool.",
+    "/model": "Usage: /model [num|id|sync]\nShow the model catalog, switch active model, or sync free models.\n  /model               - List all available models (Gemini & OpenRouter)\n  /model sync          - Pull live 100% free models from OpenRouter into catalog\n  /model <num>         - Switch model by catalog number (e.g. /model 10)\n  /model <provider/id> - Switch to any OpenRouter model (e.g. meta-llama/llama-3.3-70b-instruct)\n  * Non-Gemini models automatically route through REST engine and use the OpenRouter key pool.",
     "/ctxlog": "Usage: /ctxlog [n]\nView the context bubble sent with a past turn. Default is the most recent turn.",
     "/logs2md": "Usage: /logs2md [path]\nConvert a session log to Markdown and zip it with a timestamp. No arg = current session.",
     "/budget": "Usage: /budget [name val]\nView or set context budget limits (e.g., max tokens, category percentages).",
@@ -450,6 +452,31 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
                 )
             lines.append(f"\nActive model: {model_reg.active}")
             lines.append("Enter a number above to switch, or /model <provider/model-id> for any OpenRouter or Gemini model.")
+            return True, "\n".join(lines)
+
+        if arg.lower() in ("sync", "refresh", "free", "update"):
+            api_key = None
+            try:
+                config_dir = ctx.get("_config_dir") or Path("config")
+                reg = rest._get_key_registry("openrouter", config_dir)
+                active_k = reg.get_active_key()
+                if active_k:
+                    api_key = active_k.get("api_key")
+            except Exception:
+                pass
+            success, count, sync_msg = rest.sync_openrouter_free_models_to_catalog(catalog_path, api_key=api_key)
+            if not success:
+                return True, f"{C.RED_B}Sync failed:{C.RESET} {sync_msg}"
+            catalog = rest.load_model_catalog(catalog_path)
+            lines = [f"{C.WHITE_B}✓ {sync_msg}{C.RESET}\n", f"{C.RED_B}Updated Model Catalog (Gemini & OpenRouter):{C.RESET}"]
+            for row in catalog:
+                marker = " *" if row.get("model_string") == model_reg.active else "  "
+                lines.append(
+                    f"{marker}[{row.get('model_number')}] {row.get('display_name')} "
+                    f"({row.get('model_string')}) -- {row.get('notes', '')}"
+                )
+            lines.append(f"\nActive model: {model_reg.active}")
+            lines.append("Enter a number above to switch, or /model <provider/model-id> for any model.")
             return True, "\n".join(lines)
 
         if arg.isdigit():
