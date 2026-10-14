@@ -11,6 +11,7 @@ Date:           2026-09-29
 Author:         Elton Boehnen (written by Claude)
 RELATIONAL_ID:  82bd8a93-2980-4c1d-ba1c-268fefeeb3ee
 """
+import _libpath  # noqa: F401  (puts lib/ on sys.path for unittest + pytest)
 import time
 
 import lib_bejson_newagent_context_bubble as context_bubble

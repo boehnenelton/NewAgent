@@ -2,12 +2,15 @@
 Library:        lib_bejson_newagent_engine_interactions.py
 Family:         NewAgent
 Description:    Gemini Interactions API client with native function-calling loop.
-Version:        1.2.0
-Date:           2026-09-18
+Version:        1.3.0
+Date:           2026-10-14
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  7cf59ba2-1f32-49f2-80d1-f98e5c09821a
+RELATIONAL_ID:  a4e10c77-628b-49ef-8cf0-381a1795db28
 
 CHANGELOG:
+- 1.3.0 (2026-10-14): Differentiate project/model quota exhaustion from per-key
+  rate limits in 429 handling. Avoids burning key pool and poisoning key cooldowns
+  when an upstream model quota is reached.
 - 1.2.0 (2026-09-18): Remediation pass. This file's next_key() call site
   shares lib_bejson_newagent_engine_rest.py's KeyRegistry -- inherits that
   file's 1.17.0 fix for the all-keys-cooldown zero-delay hammering bug
@@ -62,7 +65,7 @@ from typing import Any, Callable, Optional
 import aiohttp
 from lib_bejson_newagent_actions import is_command_denylisted
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 logger = logging.getLogger(__name__)
 
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
@@ -474,17 +477,23 @@ class InteractionsPrompter:
                         detail = f"{code}: {message}" if code else (message or f"HTTP {resp.status}")
 
                         if resp.status == 429:
-                            self.key_reg.set_cooldown(key, COOLDOWN_429)
+                            if "quota" in detail.lower() or "exceeded a quota" in detail.lower():
+                                raise RuntimeError(
+                                    f"Interactions API project quota exhausted for model '{model}': {detail}. "
+                                    f"Switch to a different model (e.g. /model gemini-3.5-flash-lite)."
+                                )
+                            self.key_reg.set_cooldown(key, COOLDOWN_429, status=resp.status, reason=detail)
                             last_error = f"Rate-limited (429) -- {detail}"
                             continue
                         elif resp.status in (401, 403):
-                            self.key_reg.set_cooldown(key, COOLDOWN_AUTH)
+                            self.key_reg.set_cooldown(key, COOLDOWN_AUTH, status=resp.status, reason=detail)
                             last_error = f"Auth error ({resp.status}) -- {detail}"
                             continue
                         elif 500 <= resp.status < 600:
                             # Transient, not this key's fault -- retry
                             # without penalizing the key at all.
                             last_error = f"Server error ({resp.status}) -- {detail}"
+                            self.key_reg.record_failure(key, resp.status, detail)
                             continue
                         else:
                             # Deterministic client-side error. Retrying with

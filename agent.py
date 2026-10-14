@@ -3,12 +3,17 @@ Name:         agent.py
 Family:       NewAgent
 Description:  Lean orchestrator and async main event loop dispatcher.
               Switches dynamically between REST and Interactions engines.
-Version:      2.19.0
-Date:         2026-08-20
+Version:      2.21.0
+Date:         2026-10-14
 Author:       Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID: b3e6f9a2-5d8c-4b1e-9a4f-7c2d6b8e3f05
+RELATIONAL_ID: 9c2b48a1-ff89-4e78-bc4a-965a25e9821d
 
 CHANGELOG:
+- 2.21.0 (2026-10-14): Added provider routing safety check to turn execution loop,
+  ensuring non-Gemini models route via REST engine even if engine_mode is set to interactions.
+- 2.20.0 (2026-10-10): Integrated OpenRouter routing capability into engine_rest.py and 
+  enabled strict KeyRegistry SHA-256 ledger validation. Bumping agent.py to reflect
+  the new underlying core capabilities in NewAgent.
 - 2.19.0 (2026-08-20): Elton's live PKG84 session log (2026-08-20 02-09-05)
   showed both env sources at exists=True yet total_added still 0 --
   proving the pkg082 diagnostic (which only reports path existence) wasn't
@@ -97,8 +102,9 @@ import lib_bejson_newagent_engine_interactions as interactions
 import lib_bejson_newagent_errors as errors
 import lib_bejson_newagent_jobs as jobs
 import lib_bejson_newagent_env as newagent_env
+import lib_bejson_newagent_subagent_sessions as subagent_sessions
 
-VERSION = "2.19.1"
+VERSION = "2.21.0"
 
 # Directories configuration
 BASE_DIR = Path(__file__).resolve().parent
@@ -107,6 +113,7 @@ LOGS_DIR = BASE_DIR / "logs"
 BACKUPS_DIR = BASE_DIR / "backups"
 CONTEXT_DIR = BASE_DIR / "Context"
 JOBS_DIR = BASE_DIR / "jobs"
+SUBAGENTS_DIR = BASE_DIR / "subagents"
 
 # Registry file paths
 KEYS_PATH = CONFIG_DIR / "keys.bejson"
@@ -176,7 +183,8 @@ async def main() -> None:
         BACKUPS_DIR.mkdir(parents=True, exist_ok=True)
         jobs.ensure_job_dirs(JOBS_DIR)
         jobs.cleanup_old_completed_jobs(JOBS_DIR)
-        session.archive_old_session_logs(LOGS_DIR)  # zips/moves sessions older than the 3 most recent into logs/archive/
+        session.prune_old_logs(LOGS_DIR)  # hard-deletes logs older than 3 days (Elton, 2026-10-13)
+        subagent_sessions.cleanup_old_sessions(SUBAGENTS_DIR)  # 3-day prune of finished subagent sessions/signals
 
         rest.build_default_keys_bejson(KEYS_PATH)
         rest.build_default_models_bejson(MODELS_PATH)
@@ -525,7 +533,9 @@ async def main() -> None:
             response_text = ""
             try:
                 stats.turns_sent += 1
-                if stats.engine == "interactions":
+                catalog_rows = rest.load_model_catalog(MODEL_CATALOG_PATH)
+                active_prov = rest_prompter._resolve_provider(catalog_rows, model_reg.active)
+                if stats.engine == "interactions" and active_prov == "gemini":
                     # Interactions native function loop
                     # This executes all native tool requests directly inline
                     resp_text, usage, call_log = await int_prompter.run_turn(

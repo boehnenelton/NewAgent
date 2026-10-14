@@ -112,10 +112,10 @@ def build_job_context_block(doc: Optional[dict]) -> str:
     if not doc:
         return ""
     fmap = bejson_core_get_field_map(doc)
-    id_idx = fmap.get("task_id", 0)
-    name_idx = fmap.get("task_name", 2)
-    desc_idx = fmap.get("task_description", 3)
-    completed_idx = fmap.get("task_completed", 4)
+    id_idx = fmap["task_id"]
+    name_idx = fmap["task_name"]
+    desc_idx = fmap["task_description"]
+    completed_idx = fmap["task_completed"]
     order_idx = fmap.get("task_order")
 
     rows = list(doc.get("Values", []))

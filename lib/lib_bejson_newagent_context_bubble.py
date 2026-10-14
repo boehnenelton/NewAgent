@@ -17,12 +17,16 @@ Description:    Context Bubble pipeline (pkg015) — replaces the pkg014-removed
                 even sent to the compression call, so there's a structural
                 guarantee it can't be altered by a summarization mistake, not
                 just an instruction asking the model not to touch it.
-Version:        1.17.0
+Version:        1.18.0
 Date:           2026-09-18
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
 RELATIONAL_ID:  833087a5-4830-4990-b9bf-130f217c4a40
 
 CHANGELOG:
+- 1.18.0 (2026-10-13): Audit remediation -- build_env_file_section() masks
+  secret values (var_type == 'secret' or KEY/TOKEN/SECRET/PASSWORD names)
+  via errors.mask_value so raw API keys no longer enter the context bubble
+  or session logs.
 - 1.17.0 (2026-09-18): Remediation pass, audit finding #4 ("highest-value
   win" per the audit's own Phase 3 roadmap) -- assemble_bubble() re-read
   and re-parsed every static context file (Context_Bubble policy .md,
@@ -176,7 +180,7 @@ from lib_bejson_Core_bejson_core import (
 from lib_bejson_Core_bejson_validator import validate_bejson
 import lib_bejson_newagent_errors as errors
 
-VERSION = "1.17.0"
+VERSION = "1.18.0"
 
 # ── mtime-based read cache (Remediation pkg, audit finding #4) ─────────────
 _FILE_CACHE_LOCK = threading.Lock()
@@ -364,7 +368,7 @@ def _backfill_constants(constants_path: Path) -> None:
     if not isinstance(doc, dict):
         return
     fmap = bejson_core_get_field_map(doc)
-    name_idx = fmap.get("constant_name", 0)
+    name_idx = fmap["constant_name"]
     rows = doc.get("Values", [])
     existing = {row[name_idx] for row in rows if len(row) > name_idx}
 
@@ -397,9 +401,9 @@ def load_constants(config_dir: Path) -> dict[str, Any]:
         logger.warning("[ContextBubble] %s failed validation: %s", path, validation.errors)
 
     fmap = bejson_core_get_field_map(doc)
-    name_idx = fmap.get("constant_name", 0)
-    defined_idx = fmap.get("defined_value", 1)
-    default_idx = fmap.get("default_value", 2)
+    name_idx = fmap["constant_name"]
+    defined_idx = fmap["defined_value"]
+    default_idx = fmap["default_value"]
     for row in doc.get("Values", []):
         if len(row) <= max(name_idx, defined_idx, default_idx):
             continue
@@ -420,8 +424,8 @@ def set_constant(config_dir: Path, name: str, value: Any) -> bool:
     if not isinstance(doc, dict):
         return False
     fmap = bejson_core_get_field_map(doc)
-    name_idx = fmap.get("constant_name", 0)
-    defined_idx = fmap.get("defined_value", 1)
+    name_idx = fmap["constant_name"]
+    defined_idx = fmap["defined_value"]
     rows = doc.get("Values", [])
     stored = str(value).lower() if isinstance(value, bool) else (str(value) if value is not None else None)
     for row in rows:
@@ -492,9 +496,9 @@ def scan_triggers(
     if not isinstance(doc, dict):
         return []
     fmap = bejson_core_get_field_map(doc)
-    kw_idx = fmap.get("keyword", 0)
-    path_idx = fmap.get("context_path", 1)
-    cd_idx = fmap.get("cooldown_seconds", 2)
+    kw_idx = fmap["keyword"]
+    path_idx = fmap["context_path"]
+    cd_idx = fmap["cooldown_seconds"]
 
     user_lower = user_msg.lower()
     matches = []
@@ -574,9 +578,9 @@ def _lookup_knowledge_entry(knowledge_path: Path, info_id: str) -> Optional[str]
     if not isinstance(doc, dict):
         return None
     fmap = bejson_core_get_field_map(doc)
-    id_idx = fmap.get("info_id", 0)
-    content_idx = fmap.get("content", 1)
-    active_idx = fmap.get("is_active", 3)
+    id_idx = fmap["info_id"]
+    content_idx = fmap["content"]
+    active_idx = fmap["is_active"]
     for row in doc.get("Values", []):
         if len(row) <= max(id_idx, content_idx, active_idx):
             continue
@@ -622,10 +626,10 @@ def build_knowledge_section(
     if not isinstance(doc, dict):
         return "", 0
     fmap = bejson_core_get_field_map(doc)
-    content_idx = fmap.get("content", 1)
-    category_idx = fmap.get("category", 2)
-    active_idx = fmap.get("is_active", 3)
-    weight_idx = fmap.get("weight", 4)
+    content_idx = fmap["content"]
+    category_idx = fmap["category"]
+    active_idx = fmap["is_active"]
+    weight_idx = fmap["weight"]
 
     eligible = []  # (block_text,) per active, non-keyword_only row, in file order
     for row in doc.get("Values", []):
@@ -711,8 +715,9 @@ def build_env_file_section(env_file_paths: list[Path], turn: int, interval: int,
         if not isinstance(doc, dict):
             continue
         fmap = bejson_core_get_field_map(doc)
-        name_idx = fmap.get("var_name", 0)
-        value_idx = fmap.get("var_value", 1)
+        name_idx = fmap["var_name"]
+        value_idx = fmap["var_value"]
+        type_idx = fmap.get("var_type")  # optional column
 
         for row in doc.get("Values", []):
             if len(row) <= max(name_idx, value_idx):
@@ -720,7 +725,15 @@ def build_env_file_section(env_file_paths: list[Path], turn: int, interval: int,
             name = row[name_idx]
             if not name:
                 continue
-            block = f"{name}={row[value_idx]}"
+            raw_value = row[value_idx]
+            vtype = row[type_idx] if (type_idx is not None and len(row) > type_idx) else ""
+            # 2026-10-13 audit fix: secrets were dripped raw into the system
+            # prompt and therefore into logs/session_*. Mask at the source.
+            if errors.is_secret_name(name, vtype):
+                raw_value = errors.mask_value(raw_value)
+            else:
+                raw_value = errors.redact_secrets(raw_value)
+            block = f"{name}={raw_value}"
             if used + len(block) > budget_chars:
                 remaining = budget_chars - used
                 if remaining > 0:
@@ -778,8 +791,8 @@ def build_cwd_context_section(cwd: Path, budget_chars: int) -> tuple[str, int]:
             logger.warning("[ContextBubble] %s failed structural validation: %s", fpath, result.errors)
             continue
         fmap = bejson_core_get_field_map(doc)
-        section_idx = fmap.get("section", 0)
-        content_idx = fmap.get("content", 1)
+        section_idx = fmap["section"]
+        content_idx = fmap["content"]
         for row in doc.get("Values", []):
             if len(row) <= max(section_idx, content_idx):
                 continue
@@ -837,9 +850,9 @@ def build_active_tasks_section(cwd: str, budget_chars: int) -> tuple[str, int]:
         if not isinstance(doc, dict):
             continue
         fmap = bejson_core_get_field_map(doc)
-        id_idx = fmap.get("task_id", 0)
-        desc_idx = fmap.get("description", 1)
-        status_idx = fmap.get("status", 2)
+        id_idx = fmap["task_id"]
+        desc_idx = fmap["description"]
+        status_idx = fmap["status"]
         title = doc.get("Job_Title", fpath.name)
 
         pending_blocks = []
@@ -905,8 +918,8 @@ def upsert_cwd_context_section(cwd: str, section: str, content: str) -> tuple[bo
         doc = bejson_core_create_104a("CwdContext", list(_CWD_CONTEXT_FIELDS), [])
 
     fmap = bejson_core_get_field_map(doc)
-    section_idx = fmap.get("section", 0)
-    content_idx = fmap.get("content", 1)
+    section_idx = fmap["section"]
+    content_idx = fmap["content"]
 
     for row in doc.get("Values", []):
         if len(row) > section_idx and row[section_idx] == section:

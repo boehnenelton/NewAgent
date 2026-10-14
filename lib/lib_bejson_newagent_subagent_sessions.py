@@ -39,7 +39,7 @@ Description:    Durable sub-agent session state -- one BEJSON 104 table
                 arbitrary and the runtime doesn't dictate a fixed state
                 machine -- only "status" is a closed set the runtime
                 itself depends on (see STATUS_* constants).
-Version:        1.1.0
+Version:        1.2.0
 Date:           2026-09-29
 Author:         Elton Boehnen — eltonboehnen@gmail.com
 Contact:        eltonboehnen@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
@@ -47,6 +47,9 @@ Format_Creator: Elton Boehnen
 RELATIONAL_ID:  cd3ba553-b938-40ab-8cbb-aea860e9708d
 
 CHANGELOG:
+- 1.2.0 (2026-10-13): Added cleanup_old_sessions() -- 3-day auto-prune of
+  COMPLETED/ERROR sessions, their signals, consumed signals and loose
+  subagents/logs files.
 - 1.1.0 (2026-09-29): Remediation pass, audit finding #7. update_session()
   gained a second trim pass, max_history_chars, run after the existing
   max_history_turns trim: max_history_turns only ever bounded entry COUNT
@@ -80,7 +83,7 @@ from lib_bejson_newagent_subagent_common import (
     with_file_lock,
 )
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 # Closed set the runtime itself branches on (subagent_runtime.py). Anything
 # else (current_step) is the caller's own free-form label for where a task
@@ -271,6 +274,77 @@ def update_session(
         return False, None
 
     return with_file_lock(path, mutate, _empty_doc)
+
+
+def cleanup_old_sessions(subagents_dir: Path, max_age_days: float = 3) -> dict:
+    """Auto-prune (Elton, 2026-10-13: "three days old gone"). Removes every
+    COMPLETED/ERROR session whose last_updated (falling back to created_at)
+    is older than max_age_days, every signal belonging to a removed session,
+    any consumed signal older than the cutoff, and loose files under
+    subagents/logs/ older than the cutoff. ACTIVE/BUSY/WAITING_SIGNAL
+    sessions are never removed. Returns counts. Never raises."""
+    import time
+    from lib_bejson_newagent_subagent_common import signals_path
+    cutoff = datetime.now(timezone.utc).timestamp() - max_age_days * 86400
+    stats = {"sessions": 0, "signals": 0, "files": 0}
+
+    def _ts(value) -> Optional[float]:
+        try:
+            dt = datetime.fromisoformat(str(value))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except (TypeError, ValueError):
+            return None
+
+    removed_ids: set = set()
+
+    def prune_sessions(doc):
+        keep = []
+        for row in doc["Values"]:
+            rec = row_to_dict(doc, row)
+            ts = _ts(rec.get("last_updated")) or _ts(rec.get("created_at"))
+            if rec.get("status") in (STATUS_COMPLETED, STATUS_ERROR) and ts is not None and ts < cutoff:
+                removed_ids.add(rec.get("session_id"))
+            else:
+                keep.append(row)
+        changed = len(keep) != len(doc["Values"])
+        doc["Values"] = keep
+        return changed, None
+
+    try:
+        if sessions_path(subagents_dir).exists():
+            with_file_lock(sessions_path(subagents_dir), prune_sessions, _empty_doc)
+        stats["sessions"] = len(removed_ids)
+
+        def prune_signals(doc):
+            keep = []
+            for row in doc["Values"]:
+                rec = row_to_dict(doc, row)
+                ts = _ts(rec.get("dispatched_at"))
+                orphan = rec.get("session_id_fk") in removed_ids
+                stale_consumed = bool(rec.get("consumed")) and ts is not None and ts < cutoff
+                if not (orphan or stale_consumed):
+                    keep.append(row)
+            changed = len(keep) != len(doc["Values"])
+            stats["signals"] = len(doc["Values"]) - len(keep)
+            doc["Values"] = keep
+            return changed, None
+
+        if signals_path(subagents_dir).exists():
+            from lib_bejson_newagent_subagent_signals import _empty_doc as _empty_signals
+            with_file_lock(signals_path(subagents_dir), prune_signals, _empty_signals)
+
+        logs = Path(subagents_dir) / "logs"
+        if logs.is_dir():
+            for f in logs.iterdir():
+                if f.is_file() and f.stat().st_mtime < cutoff:
+                    f.unlink()
+                    stats["files"] += 1
+    except Exception as exc:  # pruning must never block startup
+        import logging
+        logging.getLogger(__name__).error("[Subagents] cleanup_old_sessions failed: %s", exc)
+    return stats
 
 
 def delete_session(subagents_dir: Path, session_id: str) -> bool:

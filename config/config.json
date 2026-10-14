@@ -103,7 +103,7 @@
     [
       "web_auth_token",
       "",
-      "Shared-secret token webagent.py requires on every request (X-Auth-Token header or ?token= query param). Auto-generated and saved here on first run if empty -- see webagent.py's WebAgentTerminal.__init__ (audit F-02). Blanked 2026-09-11 (audit V106-05): the previous value was a live, working token shipped in-package on export. Rotate the on-device copy separately -- blanking this exported copy alone does not invalidate a token already in active use on the device."
+      "Shared-secret token webagent.py requires on every request (X-Auth-Token header or ?token= query param). Auto-generated and saved here on first run if empty -- see webagent.py's WebAgentTerminal.__init__ (audit F-02)."
     ],
     [
       "dryrun_mode",
@@ -206,6 +206,11 @@
       "When true, /amnesia (agent.py) or the webagent Amnesia button immediately re-feeds the compressed recap back into history ('rebirth') as soon as it wipes memory. When false, /amnesia wipes to a true blank slate and the recap waits on disk until /rebirth is run manually."
     ],
     [
+      "subagents_enabled",
+      "false",
+      "Master switch for the sub-agent system (lib_bejson_newagent_subagent_*.py). When false (the default -- new/experimental feature), dispatch_subagent()/run_subagent_turn()/resume_subagent() all refuse immediately with status='disabled' and create/mutate nothing on disk; existing subagent session/signal/profile files are left untouched either way. Flip to true to allow the main agent (or any tool built on top of it) to actually dispatch sub-agent sessions."
+    ],
+    [
       "env_secure_file_path",
       "/storage/emulated/0/.env/secure/secureenv_file.json",
       "PRIMARY env source (1 of 2): secure/credential vars (API keys etc). See env_templates/ for the blank schema."
@@ -214,11 +219,6 @@
       "env_paths_file_path",
       "/storage/emulated/0/.env/user/paths.json",
       "PRIMARY env source (2 of 2): non-sensitive vars (paths, IDs, model names). See env_templates/ for the blank schema."
-    ],
-    [
-      "subagents_enabled",
-      "false",
-      "Master switch for the sub-agent system (lib_bejson_newagent_subagent_*.py). When false (the default -- new/experimental feature), dispatch_subagent()/run_subagent_turn()/resume_subagent() all refuse immediately with status='disabled' and create/mutate nothing on disk; existing subagent session/signal/profile files are left untouched either way. Flip to true to allow the main agent (or any tool built on top of it) to actually dispatch sub-agent sessions."
     ]
   ]
 }

@@ -1,12 +1,19 @@
 # Environment and configuration secrets
 config/keys.bejson
+config/keys_*.bejson
 config/key_state.bejson
+config/key_state_*.bejson
 config/session_resume.json
+config/key_ledger.bejson
+config/key_usage.bejson
 *.key
+*.env
 
 # Session logs and transcript archives (all formats)
 logs/
 logs/*
+log/
+*.log
 dev/
 
 # Local archives and chunked exports
@@ -14,8 +21,13 @@ NewAgent.zip
 chunked5/
 backups/
 Context/Context_Bubble.md
-log/
 __pycache__/
 *.pyc
 *.tmp
 .DS_Store
+.pytest_cache/
+node_modules/
+dist/
+agents.md
+gemini.md
+GEMINI.md

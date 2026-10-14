@@ -1,0 +1,55 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "ChecklistTask"
+  ],
+  "Job_Title": "3D Landscape Visualization",
+  "Created_Ts": 1791642318.43548,
+  "All_Done_Ts": null,
+  "Fields": [
+    {
+      "name": "task_id",
+      "type": "string"
+    },
+    {
+      "name": "description",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    },
+    {
+      "name": "completed_ts",
+      "type": "number"
+    }
+  ],
+  "Values": [
+    [
+      "1",
+      "Create 3D landscape HTML with Three.js",
+      "pending",
+      null
+    ],
+    [
+      "2",
+      "Implement brand styling (#de2626 red, black, white)",
+      "pending",
+      null
+    ],
+    [
+      "3",
+      "Implement realistic arrow key rotational momentum (gradual acceleration & friction deceleration)",
+      "pending",
+      null
+    ],
+    [
+      "4",
+      "Verify and test functionality",
+      "pending",
+      null
+    ]
+  ]
+}

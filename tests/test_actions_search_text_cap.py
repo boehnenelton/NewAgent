@@ -14,6 +14,7 @@ Date:           2026-10-01
 Author:         Elton Boehnen (written by Claude)
 RELATIONAL_ID:  a2d0e751-4cce-421d-a2fb-10f3a2dfa06a
 """
+import _libpath  # noqa: F401  (puts lib/ on sys.path for unittest + pytest)
 import os
 
 import pytest

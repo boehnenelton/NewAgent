@@ -65,7 +65,7 @@ def _read_log() -> list[list]:
             "[Backup] %s failed structural validation: %s", _log_path, result.errors
         )
     fmap = bejson_core_get_field_map(doc)
-    expires_idx = fmap.get("expires_at", 4)
+    expires_idx = fmap["expires_at"]
     rows = doc.get("Values", [])
     now = time.time()
     live = [r for r in rows if len(r) > expires_idx and float(r[expires_idx]) > now]

@@ -12,12 +12,18 @@ Description:  Flask-based web terminal wrapper for NewAgent. Serves the
               wired to a working loop yet. Sits in the same directory as
               agent.py and shares its config/keys/models files -- not a
               separate project.
-Version:      0.12.1
+Version:      0.12.3
 Date:         2026-08-20
 Author:       Elton Boehnen -- boehnenelton2024@gmail.com
 RELATIONAL_ID: e7f1a4c8-6b3d-4e9f-8a2c-5d7b1e4f9c30
 
 CHANGELOG:
+- 0.12.3 (2026-10-13): FIX 'does not load'. (1) Page JS never sent the auth
+  token, so every /api call from the UI returned 401 -- token is now injected
+  into the served page and fetch() wrapped to send X-Auth-Token. (2) --host/
+  --port CLI flags were documented but ignored; now parsed. (3) Friendly HTML
+  401 at '/', full ?token= URL printed at startup. (4) Clear message if Flask
+  is missing (it was absent from requirements.txt).
 - 0.12.1 (2026-08-20): sync_keys_from_env_sources() now returns
   (total_added, detail) instead of a bare int (see engine_rest.py 1.16.3).
   webagent.py doesn't capture/use the return value either way (no
@@ -94,6 +100,7 @@ CHANGELOG:
 """
 
 import sys
+import json
 import asyncio
 import secrets
 import threading
@@ -104,7 +111,10 @@ from pathlib import Path
 # -- same pattern as agent.py, since this sits in the same directory.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))
 
-from flask import Flask, request, jsonify, render_template_string
+try:
+    from flask import Flask, request, jsonify, render_template_string
+except ImportError:  # 2026-10-13: Flask was never in requirements.txt
+    sys.exit("webagent.py needs Flask. Install it with:  python3 -m pip install flask")
 
 import lib_bejson_newagent_actions as actions
 import lib_bejson_newagent_engine_rest as rest
@@ -123,7 +133,7 @@ from lib_bejson_Core_bejson_env import get_env_path
 # if neither new file exists -- see lib_bejson_newagent_env.py.
 newagent_env.newagent_source_env()
 
-VERSION = "0.12.2"
+VERSION = "0.12.3"
 
 # Directories/paths -- identical layout to agent.py, since webagent.py is a
 # sibling entry point sharing the same project, not a separate install.
@@ -1989,6 +1999,7 @@ class WebAgentTerminal:
         # config.py 1.14.0) shared by both call sites.
         self.web_token = config_lib.get_or_create_web_auth_token(CONFIG_PATH, self.config)
         print(f"[webagent] Auth token (send as X-Auth-Token header or ?token= param): {self.web_token}")
+        print(f"[webagent] Open: http://{host}:{port}/?token={self.web_token}")
         print(f"[webagent] Listening on {host}:{port} -- change host explicitly if you need this reachable beyond localhost, and understand what that exposes before you do.")
 
         # Chat/LLM engine -- reuses the exact same classes agent.py uses.
@@ -2049,6 +2060,16 @@ class WebAgentTerminal:
             # defending against a threat model this design doesn't have.
             supplied = request.headers.get("X-Auth-Token") or request.args.get("token") or ""
             if not secrets.compare_digest(supplied, self.web_token):
+                # 2026-10-13: a browser hitting "/" with no token used to get
+                # a bare JSON error that looked like the app failing to load.
+                if request.path == "/":
+                    return (
+                        "<!doctype html><meta charset=utf-8><title>NewAgent</title>"
+                        "<body style='font-family:monospace;padding:2em'>"
+                        "<h3>NewAgent web terminal</h3><p>Missing or incorrect auth token."
+                        " Open the full URL printed in the console:<br>"
+                        "<code>http://HOST:PORT/?token=&lt;token&gt;</code></p></body>"
+                    ), 401
                 return jsonify({"error": "Unauthorized -- missing or incorrect auth token."}), 401
 
         @app.after_request
@@ -2094,7 +2115,19 @@ class WebAgentTerminal:
 
         @app.route("/")
         def index():
-            return render_template_string(HTML)
+            # 2026-10-13 FIX (the "doesn't load" bug): the page JS made ~16
+            # fetch() calls and never sent the auth token, so after the
+            # F-02 auth gate every /api/* call from the UI got 401. The
+            # request that reached this route is already authenticated, so
+            # hand the token to the page and wrap fetch() to send it.
+            shim = (
+                "<script>(function(){var T=" + json.dumps(self.web_token) + ";"
+                "var f=window.fetch;window.fetch=function(u,o){"
+                "o=o||{};var h=new Headers(o.headers||{});"
+                "if(!h.has('X-Auth-Token'))h.set('X-Auth-Token',T);"
+                "o.headers=h;return f.call(this,u,o);};})();</script>"
+            )
+            return render_template_string(HTML).replace("<head>", "<head>" + shim, 1)
 
         @app.route("/api/exec", methods=["POST"])
         def api_exec():
@@ -2526,4 +2559,9 @@ class WebAgentTerminal:
 
 
 if __name__ == "__main__":
-    WebAgentTerminal().run()
+    import argparse
+    _ap = argparse.ArgumentParser(description="NewAgent web terminal")
+    _ap.add_argument("--host", default="127.0.0.1")
+    _ap.add_argument("--port", type=int, default=5001)
+    _args = _ap.parse_args()
+    WebAgentTerminal(host=_args.host, port=_args.port).run()

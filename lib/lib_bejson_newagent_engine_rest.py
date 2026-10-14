@@ -5,12 +5,28 @@ Description:    REST API prompter with rotating key and cooldown registry.
                 Key/model/cooldown registries routed through the canonical
                 Core BEJSON library (atomic write + validation + field-map
                 access) instead of hand-rolled json.load/dump.
-Version:        1.17.1
-Date:           2026-09-29
+Version:        1.20.0
+Date:           2026-10-14
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  a4f0c3e8-9b26-4c15-8d7a-2e5f1b9c8036
+RELATIONAL_ID:  ec198302-d90c-4fa2-bf6e-6cb169d273a1
 
 CHANGELOG:
+- 1.20.0 (2026-10-14): Fixed provider key sync in _get_key_registry() to call
+  sync_keys_from_env_sources() instead of sync_keys_from_env_file() on the non-existent
+  legacy env_file_path. Updated PROVIDER_ENV_KEY_PREFIX["openrouter"] to "OPENROUTER_KEY_"
+  for correct suffix sorting.
+- 1.19.0 (2026-10-13): Audit remediation. (1) Provider error bodies are
+  passed through errors.redact_secrets before logging/key_usage/last_error
+  (Google echoes the full key in 'Consumer ...suspended' 403s). (2) New
+  KeyRegistry.is_permanent_auth_failure(); a 401/403 saying the key is
+  suspended/revoked/invalid deactivates it immediately instead of after 3
+  strikes. Note: the audit's 'consecutive: 1' stall is agent.py's
+  turn-level counter, not KeyRegistry._fail_counts; per-key counting in
+  set_cooldown() was already correct (covered by new regression tests).
+- 1.18.0 (2026-10-10): Integrated OpenRouter into PROVIDER_ADAPTERS.
+  Rewrote KeyRegistry to track keys by SHA-256 hash instead of prefixes.
+  Added key flagging (e.g. leaked, paid) and persistent ledger memory
+  via lib_bejson_newagent_key_ledger.py.
 - 1.17.1 (2026-09-29): Remediation pass, audit finding #10 (Cosmetic --
   positional indexing against an in-memory literal). The audit itself
   scored this LOW/cosmetic and only recommended fixing it "next time this
@@ -149,13 +165,14 @@ CHANGELOG:
 import json
 import logging
 import random
+import uuid
 import time
 import subprocess
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 from lib_bejson_Core_bejson_core import (
     bejson_core_create_104a,
@@ -166,8 +183,18 @@ from lib_bejson_Core_bejson_core import (
 from lib_bejson_Core_bejson_validator import validate_bejson
 import lib_bejson_newagent_errors as errors
 import lib_bejson_newagent_env as newagent_env
+from lib_bejson_newagent_key_ledger import (
+    BLOCKING_FLAGS,
+    KeyLedger,
+    KeyUsageTracker,
+    key_ledger_format_flags,
+    key_ledger_hash_key,
+    key_ledger_is_blocked_flags,
+    key_ledger_parse_flags,
+    key_ledger_short_hash,
+)
 
-VERSION = "1.17.1"
+VERSION = "1.20.0"
 logger = logging.getLogger(__name__)
 
 COOLDOWN_429 = 60
@@ -194,6 +221,10 @@ _KEY_FIELDS = [
     {"name": "api_key", "type": "string"},
     {"name": "label", "type": "string"},
     {"name": "is_active", "type": "boolean"},
+    {"name": "flag", "type": "string"},
+    {"name": "uuid", "type": "string"},
+    {"name": "slot", "type": "number"},
+    {"name": "key_hash", "type": "string"},
 ]
 _STATE_FIELDS = [
     {"name": "key_prefix", "type": "string"},
@@ -242,6 +273,10 @@ DEFAULT_MODEL_CATALOG: list[list] = [
      "OpenAI-compatible beta host, 262k context, thinking off by default. "
      "1,000,000 free tokens for first 100 users, key valid through 2026-08-27.",
      "legacy", "provocative"],
+    [10, "anthropic/claude-sonnet-5.5", "Claude Sonnet 5.5 (OpenRouter)", "pro", "GA",
+     "OpenRouter Claude Sonnet 5.5 flagship.", "legacy", "openrouter"],
+    [11, "liquid/lfm-2.5-2.6b:free", "Liquid LFM 2.5 2.6B Free (OpenRouter)", "flash", "GA",
+     "OpenRouter free model tier.", "legacy", "openrouter"],
 ]
 
 # Per-provider wiring for the OpenAI-compatible (non-Gemini) adapter path.
@@ -251,9 +286,11 @@ DEFAULT_MODEL_CATALOG: list[list] = [
 # sync_keys_from_env_file().
 PROVIDER_BASE_URL = {
     "provocative": "https://inference.provocative.earth/v1",
+    "openrouter": "https://openrouter.ai/api/v1",
 }
 PROVIDER_ENV_KEY_PREFIX = {
     "provocative": "ProvocativeAI",
+    "openrouter": "OPENROUTER_KEY_",
 }
 
 # Model-registry API profiles: each profile is a pure function that takes the
@@ -398,6 +435,43 @@ def _parse_openai_compat_response(data: dict) -> tuple[str, dict]:
     return text, usage
 
 
+def _build_openrouter_request(key, model, history, system_instruction, config, catalog_rows, provider):
+    base_url = PROVIDER_BASE_URL[provider]
+    url = f"{base_url}/chat/completions"
+    messages = []
+    if system_instruction:
+        messages.append({"role": "system", "content": system_instruction})
+    for msg in history:
+        role = "user" if msg["role"] == "user" else "assistant"
+        messages.append({"role": role, "content": msg["content"]})
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": config.get("gen_temperature", 0.7),
+        "top_p": config.get("gen_top_p", 0.95),
+    }
+    max_tokens = config.get("gen_max_output_tokens")
+    if max_tokens:
+        payload["max_tokens"] = max_tokens
+        
+    # OpenRouter Specific: Include thoughts if supported by the model
+    # We could look at catalog_rows for 'thinking' but for now it's requested if supported.
+    for row in catalog_rows:
+        if row.get("model_string") == model and row.get("thinking"):
+            payload["include_thoughts"] = True
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {key}",
+        "HTTP-Referer": "https://github.com/boehnenelton/NewAgent",
+        "X-Title": "NewAgent CLI"
+    }
+    return url, headers, payload
+
+def _parse_openrouter_response(data: dict) -> tuple[str, dict]:
+    return _parse_openai_compat_response(data)
+
 PROVIDER_ADAPTERS = {
     "gemini": {
         "build_request": _build_gemini_request,
@@ -407,6 +481,11 @@ PROVIDER_ADAPTERS = {
     "provocative": {
         "build_request": _build_openai_compat_request,
         "parse_response": _parse_openai_compat_response,
+        "requires_auth": True,
+    },
+    "openrouter": {
+        "build_request": _build_openrouter_request,
+        "parse_response": _parse_openrouter_response,
         "requires_auth": True,
     },
 }
@@ -468,21 +547,57 @@ def _load_validated(path: Path) -> Optional[dict]:
 
 
 class KeyRegistry:
+    """Rotating API-key registry.
+
+    2026-10-10 rework (Elton): every keys.bejson row now carries
+      flag     -- comma-separated flags, e.g. "paid", "paid,primary", "leaked"
+      uuid     -- immutable per-row UUID (backfilled if missing)
+      slot     -- stable slot number (backfilled as max+1 if missing)
+      key_hash -- FULL sha256 hex of the key text (old 12-char hashes are
+                  upgraded in place; the 12-char display prefix is unchanged)
+    and the registry consults a permanent hash-only ledger
+    (config/key_ledger.bejson) so a key flagged leaked/bad/revoked stays
+    blocked -- and gets loudly reported -- even if it is deleted from
+    keys.bejson and later shows back up in the env file. Per-key success /
+    failure counts and the last failure reason are tracked by hash in
+    config/key_usage.bejson.
+
+    required_flags: only rotate keys carrying ALL of these flags (e.g.
+                    {"paid"} for a program that must only use paid keys).
+    excluded_flags: never rotate keys carrying ANY of these flags (in
+                    addition to the always-blocking leaked/bad/revoked).
+    """
+
     AUTO_DEACTIVATE_THRESHOLD = 3  # consecutive failures on the SAME key ->
                                    # automatically pluck it from rotation,
                                    # rather than let it keep eating retries
                                    # and consecutive-turn-failure counts
                                    # until the circuit breaker trips.
+    PLACEHOLDER_PREFIX = "REDACTED_KEY_PLACEHOLDER"
 
-    def __init__(self, keys_path: Path, state_path: Path) -> None:
-        self.keys_path = keys_path
-        self.state_path = state_path
+    def __init__(
+        self,
+        keys_path: Path,
+        state_path: Path,
+        required_flags: Optional[Iterable[str]] = None,
+        excluded_flags: Optional[Iterable[str]] = None,
+    ) -> None:
+        self.keys_path = Path(keys_path)
+        self.state_path = Path(state_path)
+        self.required_flags: set[str] = key_ledger_parse_flags(",".join(required_flags or []))
+        self.excluded_flags: set[str] = key_ledger_parse_flags(",".join(excluded_flags or []))
         self.keys: list[str] = []
         self._index: int = 0
         self._cooldowns: dict[str, float] = {}
         self._fail_counts: dict[str, int] = {}
+        self.key_metadata: dict[str, dict] = {}
+        self._hash_to_key: dict[str, str] = {}
+        self.ledger = KeyLedger(self.keys_path.parent)
+        self.usage = KeyUsageTracker(self.keys_path.parent)
         self._load_keys()
         self._load_state()
+
+    # ── loading / migration ─────────────────────────────────────────────
 
     def _load_keys(self) -> None:
         if not self.keys_path.exists():
@@ -492,20 +607,124 @@ class KeyRegistry:
             logger.error("[KeyRegistry] Failed to load keys from %s", self.keys_path)
             return
         fmap = bejson_core_get_field_map(doc)
-        idx = fmap.get("api_key", 0)
-        active_idx = fmap.get("is_active")
-        rows = doc.get("Values", [])
-        self.keys = [
-            r[idx] for r in rows
-            if len(r) > idx and r[idx]
-            # BUGFIX 2026-07-23: is_active previously wasn't checked here at
-            # all, so a revoked/deactivated key row still got loaded and
-            # used. A row with no is_active value (legacy row, or field
-            # missing from an old file) defaults to active for backward
-            # compatibility.
-            and (active_idx is None or len(r) <= active_idx or r[active_idx] is not False)
-        ]
-        logger.info("[KeyRegistry] Loaded %d active key(s)", len(self.keys))
+        if "api_key" not in fmap:
+            logger.error("[KeyRegistry] %s has no api_key field", self.keys_path)
+            return
+
+        known_names = [f["name"] for f in _KEY_FIELDS]
+        extra_fields = [f for f in doc.get("Fields", []) if f.get("name") not in known_names]
+        out_fields = list(_KEY_FIELDS) + extra_fields
+        out_names = [f["name"] for f in out_fields]
+
+        records: list[dict] = []
+        for raw_row in doc.get("Values", []):
+            rec = {}
+            for name in out_names:
+                idx = fmap.get(name)
+                value = raw_row[idx] if idx is not None and idx < len(raw_row) else None
+                if isinstance(value, str):
+                    value = value.strip()  # boundary-layer sanitization
+                rec[name] = value
+            records.append(rec)
+
+        # Backfill uuid / slot / full hash; remember whether a rewrite is needed.
+        needs_rewrite = list(doc.get("Fields", [])) != out_fields
+        used_slots = [r["slot"] for r in records if isinstance(r.get("slot"), (int, float)) and r["slot"]]
+        next_slot = int(max(used_slots)) + 1 if used_slots else 1
+        for rec in records:
+            key_val = rec.get("api_key")
+            if not isinstance(key_val, str) or not key_val:
+                continue
+            full_hash = key_ledger_hash_key(key_val)
+            if rec.get("key_hash") != full_hash:
+                rec["key_hash"] = full_hash
+                needs_rewrite = True
+            if not rec.get("uuid"):
+                rec["uuid"] = str(uuid.uuid4())
+                needs_rewrite = True
+            if not isinstance(rec.get("slot"), (int, float)) or not rec["slot"]:
+                rec["slot"] = next_slot
+                next_slot += 1
+                needs_rewrite = True
+            if rec.get("flag") is None:
+                rec["flag"] = ""
+                needs_rewrite = True
+            if rec.get("is_active") is None:
+                rec["is_active"] = True
+                needs_rewrite = True
+
+        if needs_rewrite:
+            new_doc = bejson_core_create_104a(
+                "ApiKey", out_fields, [[rec.get(n) for n in out_names] for rec in records],
+            )
+            if bejson_core_atomic_write(str(self.keys_path), new_doc):
+                logger.warning("[KeyRegistry] Migrated %s: backfilled uuid/slot/flag/full key_hash.", self.keys_path.name)
+            else:
+                logger.error("[KeyRegistry] Migration write failed for %s (continuing in memory)", self.keys_path)
+
+        ledger_dirty = False
+        for rec in records:
+            key_val = rec.get("api_key")
+            if not isinstance(key_val, str) or not key_val:
+                continue
+            full_hash = rec["key_hash"]
+            row_flags = key_ledger_parse_flags(rec.get("flag"))
+            is_placeholder = key_val.startswith(self.PLACEHOLDER_PREFIX)
+            if not is_placeholder:
+                # keys.bejson flags flow INTO the permanent ledger; ledger
+                # flags (e.g. leaked, set long ago) flow back into the
+                # effective flag set even if the keys.bejson row is blank.
+                ledger_dirty |= self.ledger.observe(
+                    full_hash, rec.get("uuid") or "", rec.get("label") or "", row_flags, save=False,
+                )
+                effective_flags = row_flags | self.ledger.flags_for(full_hash)
+            else:
+                effective_flags = row_flags | {"placeholder"}
+            is_active = rec.get("is_active") is not False
+            blocked = key_ledger_is_blocked_flags(effective_flags)
+            usable = (
+                is_active and not blocked and not is_placeholder
+                and self.required_flags <= effective_flags
+                and not (self.excluded_flags & effective_flags)
+            )
+            if blocked and is_active:
+                logger.warning(
+                    "[KeyRegistry] SECURITY: key slot %s (%s, hash %s) is flagged %s but is "
+                    "still present and active in %s -- EXCLUDED from rotation. Remove it from "
+                    "your env file.",
+                    rec.get("slot"), rec.get("label"), key_ledger_short_hash(full_hash),
+                    ",".join(sorted(effective_flags & BLOCKING_FLAGS)), self.keys_path.name,
+                )
+            if usable:
+                self.keys.append(key_val)
+            self._hash_to_key[full_hash] = key_val
+            self.key_metadata[key_val] = {
+                "flag": key_ledger_format_flags(effective_flags),
+                "flags": effective_flags,
+                "uuid": rec.get("uuid") or "",
+                "slot": rec.get("slot") or 0,
+                "label": rec.get("label") or "",
+                "key_hash": full_hash,
+                "is_active": is_active,
+                "usable": usable,
+            }
+        if ledger_dirty:
+            self.ledger.save()
+
+        filter_note = ""
+        if self.required_flags or self.excluded_flags:
+            filter_note = f" (required={sorted(self.required_flags)} excluded={sorted(self.excluded_flags)})"
+        logger.info("[KeyRegistry] Loaded %d usable key(s)%s", len(self.keys), filter_note)
+
+    def _full_hash(self, key: str) -> str:
+        meta = self.key_metadata.get(key)
+        if meta and meta.get("key_hash"):
+            return meta["key_hash"]
+        return key_ledger_hash_key(key)
+
+    def _get_key_hash(self, key: str) -> str:
+        """12-char display hash -- safe for logs/UI. Never a raw key fragment."""
+        return key_ledger_short_hash(self._full_hash(key))
 
     def _load_state(self) -> None:
         if not self.state_path.exists():
@@ -515,23 +734,46 @@ class KeyRegistry:
             logger.warning("[KeyRegistry] Could not load state from %s", self.state_path)
             return
         fmap = bejson_core_get_field_map(doc)
-        key_idx = fmap.get("key_prefix", 0)
-        until_idx = fmap.get("unavailable_until", 1)
+        key_idx = fmap["key_prefix"]
+        until_idx = fmap["unavailable_until"]
         fail_idx = fmap.get("fail_count")  # may be absent in older state files
+        migrated_legacy = 0
+        dropped = 0
         for row in doc.get("Values", []):
-            if len(row) > max(key_idx, until_idx):
-                self._cooldowns[row[key_idx]] = float(row[until_idx])
-                if fail_idx is not None and len(row) > fail_idx:
-                    self._fail_counts[row[key_idx]] = int(row[fail_idx])
+            if len(row) <= max(key_idx, until_idx):
+                continue
+            ident = row[key_idx].strip() if isinstance(row[key_idx], str) else row[key_idx]
+            # 2026-10-10: state rows are keyed by full key hash. Older files
+            # stored the RAW API KEY here -- those rows are converted on the
+            # next save, and rows for keys no longer on file are dropped so
+            # no plaintext key lingers in key_state.bejson.
+            key = self._hash_to_key.get(ident)
+            if key is None and ident in self.key_metadata:
+                key = ident
+                migrated_legacy += 1
+            if key is None:
+                dropped += 1
+                continue
+            self._cooldowns[key] = float(row[until_idx])
+            if fail_idx is not None and len(row) > fail_idx:
+                self._fail_counts[key] = int(row[fail_idx])
+        if migrated_legacy or dropped:
+            logger.warning(
+                "[KeyRegistry] key_state migrated to hash identity (%d raw-key row(s) converted, "
+                "%d orphan row(s) dropped).", migrated_legacy, dropped,
+            )
+            self._save_state()
 
     def _save_state(self) -> None:
         all_keys = set(self._cooldowns) | set(self._fail_counts)
         doc = bejson_core_create_104a(
             "KeyState", list(_STATE_FIELDS),
-            [[k, self._cooldowns.get(k, 0.0), self._fail_counts.get(k, 0)] for k in all_keys],
+            [[self._full_hash(k), self._cooldowns.get(k, 0.0), self._fail_counts.get(k, 0)] for k in all_keys],
         )
         if not bejson_core_atomic_write(str(self.state_path), doc):
             logger.error("[KeyRegistry] Atomic write failed for %s", self.state_path)
+
+    # ── rotation ────────────────────────────────────────────────────────
 
     def _is_available(self, key: str) -> bool:
         until = self._cooldowns.get(key, 0.0)
@@ -584,8 +826,8 @@ class KeyRegistry:
             return None
         logger.warning(
             "[KeyRegistry] All %d key(s) on cooldown; waiting %.1fs for "
-            "...%s to become available instead of firing a doomed request.",
-            len(self.keys), wait, best[-6:],
+            "key %s to become available instead of firing a doomed request.",
+            len(self.keys), wait, self._get_key_hash(best),
         )
         time.sleep(wait)
         return best if self._is_available(best) else None
@@ -594,22 +836,48 @@ class KeyRegistry:
     def active_slot(self) -> int:
         return max(0, (self._index - 1) % max(len(self.keys), 1)) + 1
 
-    def set_cooldown(self, key: str, seconds: float) -> None:
+    # ── outcome tracking ────────────────────────────────────────────────
+
+    def _usage_ids(self, key: str) -> tuple[str, str, str]:
+        meta = self.key_metadata.get(key, {})
+        return self._full_hash(key), meta.get("uuid", ""), meta.get("label", "")
+
+    def record_failure(self, key: str, status: Optional[int] = None, reason: str = "") -> None:
+        """Record a failure against this key in key_usage.bejson without
+        touching cooldowns (e.g. HTTP 400, which is request-shaped)."""
+        key_hash, key_uuid, label = self._usage_ids(key)
+        self.usage.record_failure(key_hash, status, reason, key_uuid, label)
+
+    def set_cooldown(self, key: str, seconds: float, status: Optional[int] = None, reason: str = "") -> None:
         self._cooldowns[key] = time.time() + seconds
         self._fail_counts[key] = self._fail_counts.get(key, 0) + 1
         self._save_state()
+        self.record_failure(key, status, reason)
 
         if self._fail_counts[key] >= self.AUTO_DEACTIVATE_THRESHOLD:
             logger.warning(
-                "[KeyRegistry] Key ...%s failed %d consecutive times -- "
+                "[KeyRegistry] Key %s failed %d consecutive times -- "
                 "auto-deactivating (plucking from rotation) rather than "
                 "letting it keep costing retries and consecutive-turn "
                 "failures toward the circuit breaker.",
-                key[-6:], self._fail_counts[key],
+                self._get_key_hash(key), self._fail_counts[key],
             )
-            self.deactivate_key(key)
+            self.deactivate_key(
+                key, reason=f"auto-deactivated after {self._fail_counts[key]} consecutive failures "
+                            f"(last: {status if status is not None else 'n/a'} {reason[:120]})",
+            )
 
-    def set_transient_cooldown(self, key: str, seconds: float) -> None:
+    @staticmethod
+    def is_permanent_auth_failure(error_body: str) -> bool:
+        """True when a 401/403 body says the key itself is dead (suspended,
+        revoked, invalid) rather than a transient/permission-scoped refusal."""
+        body = (error_body or "").lower()
+        return any(m in body for m in (
+            "has been suspended", "api_key_invalid", "api key not valid",
+            "api key expired", "key has been revoked",
+        ))
+
+    def set_transient_cooldown(self, key: str, seconds: float, status: Optional[int] = None, reason: str = "") -> None:
         """For failures that say nothing about whether THIS KEY is good --
         a transient server-side error (500/502/503/504) or a network-level
         failure (DNS, timeout, no connectivity) hits every key identically,
@@ -620,6 +888,7 @@ class KeyRegistry:
         it while it's failing) without touching _fail_counts at all."""
         self._cooldowns[key] = time.time() + seconds
         self._save_state()
+        self.record_failure(key, status, reason)
 
     def mark_success(self, key: str) -> None:
         """Call this after a key actually succeeds. Resets its failure
@@ -629,23 +898,104 @@ class KeyRegistry:
         passing rather than being cleared the moment it proved itself."""
         self._fail_counts[key] = 0
         self.clear_cooldown(key)
+        key_hash, key_uuid, label = self._usage_ids(key)
+        self.usage.record_success(key_hash, key_uuid, label)
 
     def clear_cooldown(self, key: str) -> None:
         self._cooldowns.pop(key, None)
         self._save_state()
 
-    def find_key_by_suffix(self, suffix: str) -> Optional[str]:
-        """Match against the last 6 chars shown by /keys (e.g. '...3xvVgA'),
-        but also accept a longer suffix the caller might paste in."""
-        suffix = suffix.strip()
-        if not suffix:
+    # ── lookup / admin ──────────────────────────────────────────────────
+
+    def find_key_by_suffix(self, identifier: str) -> Optional[str]:
+        """Match an ACTIVE key by hash prefix (or legacy raw suffix)."""
+        identifier = identifier.strip()
+        if not identifier:
             return None
-        matches = [k for k in self.keys if k.endswith(suffix)]
+        matches = [k for k in self.keys if k.endswith(identifier) or self._full_hash(k).startswith(identifier.lower())]
         if len(matches) == 1:
             return matches[0]
-        return None  # no match, or ambiguous (multiple keys share that suffix)
+        return None  # no match, or ambiguous
 
-    def deactivate_key(self, key: str) -> bool:
+    def find_known_keys(self, identifier: str) -> list[str]:
+        """Match ANY key on file (active or not) by hash prefix, uuid,
+        label (e.g. GEMINI_KEY_3), or slot ("7" / "slot:7")."""
+        ident = (identifier or "").strip()
+        if not ident:
+            return []
+        slot_text = ident.split(":", 1)[1] if ident.lower().startswith("slot:") else ident
+        hits = []
+        for key, meta in self.key_metadata.items():
+            if (
+                (len(ident) >= 6 and meta["key_hash"].startswith(ident.lower()))
+                or meta["uuid"] == ident
+                or (slot_text.isdigit() and int(meta["slot"] or 0) == int(slot_text))
+            ):
+                hits.append(key)
+        if not hits:
+            hits = [k for k, m in self.key_metadata.items() if m["label"] == ident and m["is_active"]]
+        return hits
+
+    def _rewrite_key_row(self, key: str, mutate) -> bool:
+        doc = _load_validated(self.keys_path)
+        if doc is None:
+            logger.error("[KeyRegistry] could not load %s", self.keys_path)
+            return False
+        fmap = bejson_core_get_field_map(doc)
+        key_idx = fmap["api_key"]
+        found = False
+        for row in doc.get("Values", []):
+            if len(row) > key_idx and isinstance(row[key_idx], str) and row[key_idx].strip() == key:
+                while len(row) < len(doc.get("Fields", [])):
+                    row.append(None)
+                mutate(row, fmap)
+                found = True
+                break
+        if not found:
+            logger.warning("[KeyRegistry] key %s not found in %s", self._get_key_hash(key), self.keys_path)
+            return False
+        doc.pop("_bejson_field_map", None)
+        if not bejson_core_atomic_write(str(self.keys_path), doc):
+            logger.error("[KeyRegistry] atomic write failed for %s", self.keys_path)
+            return False
+        return True
+
+    def flag_key(self, key: str, add: Iterable[str] = (), remove: Iterable[str] = (), note: str = "") -> bool:
+        """Add/remove flags on a key in keys.bejson AND the permanent ledger.
+        Adding a blocking flag (leaked/bad/revoked) also sets is_active=False
+        and pulls the key from rotation immediately. Removing a flag never
+        auto-reactivates -- that stays an explicit, manual decision."""
+        add_set = key_ledger_parse_flags(",".join(add))
+        remove_set = key_ledger_parse_flags(",".join(remove))
+        meta = self.key_metadata.get(key)
+        if meta is None:
+            return False
+        key_hash = meta["key_hash"]
+        new_flags = (meta["flags"] - {"placeholder"} | add_set) - remove_set
+        flag_text = key_ledger_format_flags(new_flags)
+        blocking = key_ledger_is_blocked_flags(new_flags)
+
+        def _mutate(row, fmap):
+            row[fmap["flag"]] = flag_text
+            if blocking:
+                row[fmap["is_active"]] = False
+
+        if not self._rewrite_key_row(key, _mutate):
+            return False
+        self.ledger.set_flags(key_hash, new_flags, note)
+        meta["flags"] = new_flags
+        meta["flag"] = flag_text
+        if blocking:
+            meta["is_active"] = False
+            meta["usable"] = False
+            if key in self.keys:
+                self.keys.remove(key)
+                self._index = 0 if not self.keys else self._index % len(self.keys)
+        logger.warning("[KeyRegistry] Key %s flags now '%s'%s", self._get_key_hash(key), flag_text,
+                       " -- removed from rotation" if blocking else "")
+        return True
+
+    def deactivate_key(self, key: str, reason: str = "") -> bool:
         """Set is_active=False on this key's row in keys.bejson (the existing
         mechanism _load_keys() already respects -- see the 2026-07-23
         bugfix comment there) and remove it from the in-memory rotation
@@ -654,37 +1004,24 @@ class KeyRegistry:
         the label and history aren't lost -- this is a soft deactivation,
         matching how a person would want to un-revoke it later by hand.
         """
-        doc = _load_validated(self.keys_path)
-        if doc is None:
-            logger.error("[KeyRegistry] deactivate_key: could not load %s", self.keys_path)
-            return False
+        def _mutate(row, fmap):
+            row[fmap["is_active"]] = False
 
-        fmap = bejson_core_get_field_map(doc)
-        key_idx = fmap.get("api_key", 0)
-        active_idx = fmap.get("is_active", 2)
-        found = False
-        for row in doc.get("Values", []):
-            if len(row) > key_idx and row[key_idx] == key:
-                while len(row) <= active_idx:
-                    row.append(None)
-                row[active_idx] = False
-                found = True
-                break
-
-        if not found:
-            logger.warning("[KeyRegistry] deactivate_key: %s not found in %s", key[-6:], self.keys_path)
-            return False
-
-        if not bejson_core_atomic_write(str(self.keys_path), doc):
-            logger.error("[KeyRegistry] deactivate_key: atomic write failed for %s", self.keys_path)
+        if not self._rewrite_key_row(key, _mutate):
             return False
 
         if key in self.keys:
             self.keys.remove(key)
+        if key in self.key_metadata:
+            self.key_metadata[key]["is_active"] = False
+            self.key_metadata[key]["usable"] = False
         self._cooldowns.pop(key, None)
         self._index = 0 if not self.keys else self._index % len(self.keys)
         self._save_state()
-        logger.warning("[KeyRegistry] Key ...%s deactivated (is_active=False, removed from rotation).", key[-6:])
+        if reason:
+            key_hash = self._full_hash(key)
+            self.ledger.set_flags(key_hash, self.ledger.flags_for(key_hash), f"deactivated: {reason}")
+        logger.warning("[KeyRegistry] Key %s deactivated (is_active=False, removed from rotation).", self._get_key_hash(key))
         return True
 
 class ModelRegistry:
@@ -700,8 +1037,8 @@ class ModelRegistry:
         if doc is None:
             return
         fmap = bejson_core_get_field_map(doc)
-        name_idx = fmap.get("setting_name", 0)
-        value_idx = fmap.get("setting_value", 1)
+        name_idx = fmap["setting_name"]
+        value_idx = fmap["setting_value"]
         for row in doc.get("Values", []):
             if len(row) > max(name_idx, value_idx) and row[name_idx] == "active_model":
                 self._active_model = row[value_idx]
@@ -820,10 +1157,9 @@ class RestPrompter:
         config_dir = self.key_reg.keys_path.parent
         keys_path = config_dir / f"keys_{provider}.bejson"
         state_path = config_dir / f"key_state_{provider}.bejson"
-        env_file_path = Path(self.config.get("env_file_path", ""))
         env_key_prefix = PROVIDER_ENV_KEY_PREFIX.get(provider, "")
         if env_key_prefix:
-            sync_keys_from_env_file(keys_path, env_file_path, key_prefix=env_key_prefix)
+            sync_keys_from_env_sources(keys_path, self.config, key_prefix=env_key_prefix)
         reg = KeyRegistry(keys_path, state_path)
         self._key_registries[provider] = reg
         return reg
@@ -895,7 +1231,10 @@ class RestPrompter:
             _, _, url, headers, payload = self._build_request(key, history, system_instruction)
             body = json.dumps(payload).encode("utf-8")
             req = urllib.request.Request(url, data=body, headers=headers, method="POST")
-            key_tail = key[-6:] if key else "n/a"
+            # FIX 2026-10-10: was self._get_key_hash(key) -- RestPrompter has no
+            # such method (it lives on KeyRegistry), so EVERY REST prompt raised
+            # AttributeError before the request was even sent.
+            key_tail = key_registry._get_key_hash(key) if (key and key_registry) else "n/a"
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
@@ -922,21 +1261,40 @@ class RestPrompter:
                         error_body = exc.read().decode("utf-8", errors="replace")
                     except Exception:
                         error_body = f"(could not read error body: {exc.reason})"
+                    error_body = errors.redact_secrets(error_body)
                     self._debug_dump_request_error(payload, status, error_body)
                     logger.warning(
                         "[Engine_REST] HTTP 400 Bad Request on attempt %d/%d (provider %s, key ...%s): %s. "
                         "Request+response dumped to logs/raw_api_error_*.json if debug_mode is on.",
                         attempt + 1, self.max_retries, provider, key_tail, error_body[:200],
                     )
-                    last_error = f"Bad Request (400) on key ...{key_tail}: {error_body[:200]}"
-                elif status == 429:
+                    last_error = f"Bad Request (400) on key {key_tail}: {error_body[:200]}"
                     if key_registry:
-                        key_registry.set_cooldown(key, COOLDOWN_429)
-                    last_error = f"Rate-limited (429) on key ...{key_tail}"
-                elif status in (401, 403):
+                        key_registry.record_failure(key, status, error_body[:200])
+                elif status in (429, 401, 403):
+                    try:
+                        error_body = exc.read().decode("utf-8", errors="replace")
+                    except Exception:
+                        error_body = str(exc.reason)
+                    # 2026-10-13 audit fix: provider error bodies echo the full
+                    # API key ("Consumer 'api_key:AQ....' has been suspended");
+                    # scrub before it reaches logs, key_usage or last_error.
+                    error_body = errors.redact_secrets(error_body)
                     if key_registry:
-                        key_registry.set_cooldown(key, COOLDOWN_AUTH)
-                    last_error = f"Auth error ({status}) on key ...{key_tail}"
+                        key_registry.set_cooldown(
+                            key, COOLDOWN_429 if status == 429 else COOLDOWN_AUTH,
+                            status=status, reason=error_body[:300],
+                        )
+                        # A suspended/revoked key never recovers on its own --
+                        # waiting for 3 strikes just burns retries on it.
+                        if status in (401, 403) and key_registry.is_permanent_auth_failure(error_body):
+                            key_registry.deactivate_key(
+                                key, reason=f"permanent auth failure ({status}): {error_body[:120]}",
+                            )
+                    if status == 429:
+                        last_error = f"Rate-limited (429) on key {key_tail}"
+                    else:
+                        last_error = f"Auth error ({status}) on key {key_tail}: {error_body[:160]}"
                 elif status in (500, 502, 503, 504):
                     # Server-side/transient -- the provider's servers, not
                     # this key. Every key would fail identically right now.
@@ -945,7 +1303,7 @@ class RestPrompter:
                     # the exact same one immediately, but do NOT count this
                     # toward auto-deactivation.
                     if key_registry:
-                        key_registry.set_transient_cooldown(key, COOLDOWN_TRANSIENT)
+                        key_registry.set_transient_cooldown(key, COOLDOWN_TRANSIENT, status=status, reason="server-side")
                     last_error = f"Server error ({status}) — not key-specific"
                 else:
                     # Truly unexpected status -- cautious default: still
@@ -954,7 +1312,7 @@ class RestPrompter:
                     # bad key forever. Known-transient codes are handled
                     # above specifically so they don't hit this path.
                     if key_registry:
-                        key_registry.set_cooldown(key, COOLDOWN_429)
+                        key_registry.set_cooldown(key, COOLDOWN_429, status=status, reason=f"unexpected HTTP {status}")
                     last_error = f"HTTP {status}"
                 last_was_parse_error = False
             except errors.EngineParseError as exc:
@@ -1061,8 +1419,8 @@ def sync_keys_from_env_file(
         return 0
 
     env_fmap = bejson_core_get_field_map(env_doc)
-    name_idx = env_fmap.get("var_name", 0)
-    value_idx = env_fmap.get("var_value", 1)
+    name_idx = env_fmap["var_name"]
+    value_idx = env_fmap["var_value"]
 
     def _suffix_sort_key(row: list) -> int:
         name = row[name_idx] if len(row) > name_idx else ""
@@ -1096,24 +1454,60 @@ def sync_keys_from_env_file(
         existing_doc = bejson_core_create_104a("ApiKey", list(_KEY_FIELDS), [])
 
     existing_fmap = bejson_core_get_field_map(existing_doc)
-    key_idx = existing_fmap.get("api_key", 0)
-    label_idx = existing_fmap.get("label", 1)
-    active_idx = existing_fmap.get("is_active", 2)
+    key_idx = existing_fmap["api_key"]
+    label_idx = existing_fmap["label"]
+    active_idx = existing_fmap["is_active"]
     existing_rows = existing_doc.get("Values", [])
     existing_values = {r[key_idx] for r in existing_rows if len(r) > key_idx}
 
     field_idx = {f["name"]: i for i, f in enumerate(_KEY_FIELDS)}
     candidate_values = {row[value_idx] for row in candidate_rows}
 
+    # 2026-10-10: permanent hash ledger -- a key flagged leaked/bad/revoked
+    # is never re-added or reactivated, even if it was deleted from
+    # keys.bejson long ago and has now crept back into the env file.
+    key_ledger = KeyLedger(Path(keys_path).parent)
+    blocked_seen = 0
+
+    def _ledger_blocks(value: str, label: str) -> bool:
+        nonlocal blocked_seen
+        value_hash = key_ledger_hash_key(value)
+        if not key_ledger.is_blocked(value_hash):
+            return False
+        blocked_seen += 1
+        flags = ",".join(sorted(key_ledger.flags_for(value_hash) & BLOCKING_FLAGS))
+        msg = (f"SECURITY: {label} in {env_file_path.name} matches a key previously flagged "
+               f"'{flags}' (hash {key_ledger_short_hash(value_hash)}) -- NOT loaded. Remove it from the env file.")
+        logger.warning("[Engine_REST] %s", msg)
+        if diagnostics is not None:
+            diagnostics.append(msg)
+        return True
+
+    existing_slots = []
+    slot_idx_existing = existing_fmap.get("slot")
+    if slot_idx_existing is not None:
+        existing_slots = [r[slot_idx_existing] for r in existing_rows
+                          if len(r) > slot_idx_existing and isinstance(r[slot_idx_existing], (int, float))]
+    next_slot = int(max(existing_slots)) + 1 if existing_slots else len(existing_rows) + 1
+
     added = 0
     for row in candidate_rows:
         value = row[value_idx]
         if value in existing_values:
             continue
+        if _ledger_blocks(value, row[name_idx]):
+            continue
         new_row = [None] * len(_KEY_FIELDS)
         new_row[field_idx["api_key"]] = value
         new_row[field_idx["label"]] = row[name_idx]
         new_row[field_idx["is_active"]] = True
+        
+        new_row[field_idx["flag"]] = ""
+        new_row[field_idx["uuid"]] = str(uuid.uuid4())
+        new_row[field_idx["slot"]] = next_slot
+        next_slot += 1
+        new_row[field_idx["key_hash"]] = key_ledger_hash_key(value)
+
         existing_rows.append(new_row)
         existing_values.add(value)
         added += 1
@@ -1146,6 +1540,8 @@ def sync_keys_from_env_file(
             is_env_key_still_present = r[key_idx] in candidate_values
             currently_active = r[active_idx] is not False
             if is_env_key_still_present and not currently_active:
+                if _ledger_blocks(r[key_idx], label):
+                    continue
                 r[active_idx] = True
                 reactivated += 1
             elif not is_env_key_still_present and currently_active:
@@ -1215,7 +1611,7 @@ def sync_keys_from_env_sources(
             existing_doc = bejson_core_load_file(str(keys_path))
             if isinstance(existing_doc, dict):
                 fmap = bejson_core_get_field_map(existing_doc)
-                label_i, active_i = fmap.get("label", 1), fmap.get("is_active", 2)
+                label_i, active_i = fmap["label"], fmap["is_active"]
                 existing_active = sum(
                     1 for r in existing_doc.get("Values", [])
                     if len(r) > max(label_i, active_i)
@@ -1279,7 +1675,7 @@ def backfill_model_catalog_api_profile(path: Path) -> None:
         row[_catalog_fmap["model_string"]]: row[_catalog_fmap["api_profile"]]
         for row in DEFAULT_MODEL_CATALOG
     }
-    model_idx = fmap.get("model_string", 1)
+    model_idx = fmap["model_string"]
     rows = doc.get("Values", [])
     for row in rows:
         model_string = row[model_idx] if len(row) > model_idx else None

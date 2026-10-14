@@ -18,6 +18,7 @@ Date:           2026-09-29
 Author:         Elton Boehnen (written by Claude)
 RELATIONAL_ID:  e9f1e253-e223-4f24-a0ac-8f39c209ed18
 """
+import _libpath  # noqa: F401  (puts lib/ on sys.path for unittest + pytest)
 import pytest
 
 import lib_bejson_Core_mfdb_core as mfdb_core

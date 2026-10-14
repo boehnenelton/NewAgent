@@ -15,6 +15,7 @@ Date:           2026-09-29
 Author:         Elton Boehnen (written by Claude)
 RELATIONAL_ID:  20159752-cd0b-4e6f-a7cd-70c9c67c20a0
 """
+import _libpath  # noqa: F401  (puts lib/ on sys.path for unittest + pytest)
 import pytest
 
 import lib_bejson_newagent_session as session

@@ -1,0 +1,172 @@
+<![CDATA[<!DOCTYPE html>
+<html lang="en">
+<head>
+  <!--
+    Created byelton Boehnen (boehnenelton2024@gmail.com)
+    3D Landscape Visualization with Three.js and Physics Momentum Controls
+  -->
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Landscape Visualization</title>
+  <style>
+    :root {
+      --brand-red: #de2626;
+      --brand-black: #000000;
+      --brand-white: #ffffff;
+      --brand-dark: #121212;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--brand-black);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--brand-white);
+    }
+
+    #canvas-container {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+
+    #hud {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.85);
+      border: 2px solid var(--brand-red);
+      border-radius: 8px;
+      padding: 16px 24px;
+      box-shadow: 0 0 15px rgba(222, 38, 38, 0.4);
+      max-width: 340px;
+      user-select: none;
+    }
+
+    #hud h1 {
+      font-size: 1.2rem;
+      color: var(--brand-red);
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--brand-red);
+      padding-bottom: 6px;
+    }
+
+    #hud p {
+      font-size: 0.85rem;
+      color: var(--brand-white);
+      line-height: 1.4;
+      margin-bottom: 10px;
+    }
+
+    .key-badge {
+      display: inline-block;
+      background: var(--brand-red);
+      color: var(--brand-white);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: bold;
+      font-size: 0.75rem;
+    }
+
+    .telemetry {
+      margin-top: 10px;
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: #cccccc;
+      background: #080808;
+      padding: 8px;
+      border-radius: 4px;
+      border-left: 3px solid var(--brand-red);
+    }
+
+    .telemetry-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+
+    .telemetry-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .gauge-bar {
+      width: 100%;
+      height: 4px;
+      background: #333333;
+      margin-top: 4px;
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .gauge-fill {
+      height: 100%;
+      background: var(--brand-red);
+      width: 0%;
+      transition: width 0.05s linear;
+    }
+
+    #footer-credit {
+      position: absolute;
+      bottom: 15px;
+      right: 20px;
+      z-index: 10;
+      font-size: 0.75rem;
+      color: #888888;
+      background: rgba(0, 0, 0, 0.7);
+      padding: 6px 12px;
+      border-radius: 4px;
+      border: 1px solid #333333;
+    }
+
+    #footer-credit span {
+      color: var(--brand-red);
+      font-weight: bold;
+    }
+  </style>
+  <!-- Three.js Library -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <div id="hud">
+    <h1>3D Terrain Viewer</h1>
+    <p>Use <span class="key-badge">←</span> <span class="key-badge">→</span> <span class="key-badge">↑</span> <span class="key-badge">↓</span> to rotate.</p>
+    <p>Hold keys to build rotational momentum. Release to glide with friction deceleration.</p>
+    
+    <div class="telemetry">
+      <div class="telemetry-row">
+        <span>Rot Speed Yaw (Y):</span>
+        <span id="speed-y">0.000</span>
+      </div>
+      <div class="gauge-bar"><div id="gauge-y" class="gauge-fill"></div></div>
+
+      <div class="telemetry-row" style="margin-top: 8px;">
+        <span>Rot Speed Pitch (X):</span>
+        <span id="speed-x">0.000</span>
+      </div>
+      <div class="gauge-bar"><div id="gauge-x" class="gauge-fill"></div></div>
+    </div>
+  </div>
+
+  <div id="footer-credit">
+    Engine & Design by <span>Elton Boehnen</span> (boehnenelton2024@gmail.com)
+  </div>
+
+  <script src="landscape.js"></script>
+</body>
+</html>
+]]>

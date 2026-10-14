@@ -14,6 +14,7 @@ Date:           2026-09-29
 Author:         Elton Boehnen (written by Claude)
 RELATIONAL_ID:  c2e21079-d9fe-4f11-abe0-6fd7ee4d8c91
 """
+import _libpath  # noqa: F401  (puts lib/ on sys.path for unittest + pytest)
 import threading
 
 import lib_bejson_newagent_subagent_common as subagent_common

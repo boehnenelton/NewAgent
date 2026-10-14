@@ -1,0 +1,18 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": ["ScriptConfig"],
+  "Fields": [
+    {"name": "setting_name",  "type": "string"},
+    {"name": "setting_value", "type": "any"},
+    {"name": "description",   "type": "string"}
+  ],
+  "Values": [
+    ["stage_dir", "stage/", "Relative path for staging copied and converted audio files."],
+    ["default_whisper_model", "tiny", "Default Whisper model size (tiny, base, small, medium, large)."],
+    ["audio_sample_rate", 16000, "Target audio sample rate in Hz for conversion."],
+    ["audio_channels", 1, "Target audio channels (1 = mono, 2 = stereo)."],
+    ["audio_sample_format", "pcm_s16le", "Target audio codec format (16-bit PCM little endian)."]
+  ]
+}

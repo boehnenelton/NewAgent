@@ -2,12 +2,16 @@
 Library:        lib_bejson_newagent_commands.py
 Family:         NewAgent
 Description:    TUI slash command handler and helper displays.
-Version:        1.18.0
-Date:           2026-08-18
+Version:        1.20.0
+Date:           2026-10-14
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  e5a8c2f6-9d4b-4a1e-8c6f-3b7d5a9e1c40
+RELATIONAL_ID:  17dfbca4-d8ec-4993-9c87-9bb3cae53749
 
 CHANGELOG:
+- 1.20.0 (2026-10-14): Added provider routing awareness to /engine and /model.
+  Blocks switching to Interactions engine if the active model uses a non-Gemini provider,
+  and displays provider in /model switch confirmations.
+- 1.19.0 (2026-10-10): Fixes and improvements.
 - 1.18.0 (2026-08-18): Added /logs2md -- Logging System rework (Elton's
   request: "make the user type a command to convert the logs to markdown").
   No arg converts the current live session (ctx["_logger"].log_path); an
@@ -69,7 +73,7 @@ import lib_bejson_newagent_context_bubble as context_bubble
 import lib_bejson_newagent_engine_rest as rest
 import lib_bejson_newagent_jobs as jobs_lib
 
-VERSION = "1.18.0"
+VERSION = "1.20.0"
 
 HELP_COMMANDS: list[tuple[str, str]] = [
     ("/help", "Show this help reference"),
@@ -81,18 +85,17 @@ HELP_COMMANDS: list[tuple[str, str]] = [
     ("/speak", "Toggle printing of TTS output"),
     ("/ac", "Toggle auto-continue after action execution"),
     ("/spk", "Cycle input mode: 0 (typed) -> 1 (STT) -> 2 (dialog) -> 0"),
-    ("/snip [cmd]", "Snippet manager: list | add <lbl>|<txt> | del <id> | off <id>"),
+    ("/snip", "Snippet manager (add/del/list/off)"),
     ("/dryrun", "Toggle dry-run mode (actions are simulated)"),
-    ("/cd <path>", "Change active working directory immediately"),
-    ("/goto <path>", "Alias for /cd to change active working directory immediately"),
+    ("/cd", "Change active working directory immediately"),
+    ("/goto", "Alias for /cd"),
     ("/history", "Print full scrollable history with role badges"),
-    ("/export [path]", "Export full conversation to Markdown file"),
+    ("/export", "Export full conversation to Markdown file"),
     ("/backups", "List unexpired backups in backup_log.bejson"),
-    ("/restore <id>", "Restore a file to its backed-up snapshot"),
+    ("/restore", "Restore a file to its backed-up snapshot"),
     ("/sessions", "List archived sessions"),
-    ("/keys", "View Gemini API keys status and call counts"),
-    ("/keys deactivate <suffix>", "Permanently deactivate a key (is_active=False) so it stops rotating in"),
-    ("/model [num|id]", "Show numbered model catalog / switch by number or literal ID"),
+    ("/keys", "API Keys manager (list/flag/deactivate/ledger)"),
+    ("/model", "Show model catalog or switch active model"),
     ("/config", "Display active ScriptConfig parameters"),
     ("/stats", "Display session statistics"),
     ("/status", "Show circuit-breaker state, uptime, active key, current model"),
@@ -100,30 +103,48 @@ HELP_COMMANDS: list[tuple[str, str]] = [
     ("/toolscope", "Cycle interactions tool scope (all | shell_only)"),
     ("/resumemode", "Toggle Interactions resume strategy"),
     ("/checkpoints", "List saved named rollback checkpoints"),
-    ("/rollback <lbl>", "Rollback all files in checkpoint to prior state"),
-    ("/ctxlog [n]", "View the context bubble sent with a past turn (Context Button)"),
-    ("/logs2md [path]", "Convert a session log to Markdown + a timestamped zip (no arg = current session; no more automatic .md generation)"),
+    ("/rollback", "Rollback all files in checkpoint to prior state"),
+    ("/ctxlog", "View the context bubble sent with a past turn (Context Button)"),
+    ("/logs2md", "Convert a session log to Markdown + a timestamped zip"),
     ("/observer", "Toggle Part 4 context compression on/off"),
     ("/init", "Scaffold an empty context.bejson in the current directory"),
-    ("/budget [name val]", "View or set context budget (max tokens, category percentages)"),
+    ("/budget", "View or set context budget (max tokens, category percentages)"),
     ("/gate", "Toggle confirmation gate for risky actions"),
-    ("/debug", "Toggle debug_mode: dump raw API request/response pairs on every call and error"),
+    ("/debug", "Toggle debug_mode (dump raw API request/response pairs)"),
     ("/jobs", "List pending jobs in jobs/ and show the currently active one"),
-    ("/jobstart <name>", "Start a job (injects its goal+tasks into the system prompt)"),
-    ("/amnesia", "Force-compress the live session history to a recap, then wipe agent memory (on-disk logs untouched). Auto-feeds the recap back in unless auto_amnesia_memory_retrieval is off."),
-    ("/rebirth", "Retrieve the last /amnesia recap and feed it back into memory (manual step when auto_amnesia_memory_retrieval is off)"),
+    ("/jobstart", "Start a job (injects its goal+tasks into the system prompt)"),
+    ("/amnesia", "Force-compress the live session history to a recap, then wipe agent memory"),
+    ("/rebirth", "Retrieve the last /amnesia recap and feed it back into memory"),
     ("/about", "Display version and author information"),
 ]
 
+VERBOSE_HELP: dict[str, str] = {
+    "/help": "Usage: /help\nDisplays a clean list of all available commands. Type /<command> help for more details on a specific command.",
+    "/keys": "Usage: /keys [subcommand]\nManage your API keys.\n  /keys                - View API keys status and call counts.\n  /keys deactivate <hash> - Permanently deactivate a key.\n  /keys flag <hash> <flag> [note] - Flag a key (e.g. leaked, paid).\n  /keys unflag <hash> <flag> - Remove a flag.\n  /keys ledger         - View full persistent key ledger.",
+    "/snip": "Usage: /snip [cmd]\nManage reusable snippets.\n  /snip list       - List all active snippets.\n  /snip add <lbl>|<txt> - Add a new snippet.\n  /snip del <id>   - Delete a snippet.\n  /snip off <id>   - Disable a snippet temporarily.",
+    "/cd": "Usage: /cd <path>\nChange the agent\'s active working directory immediately. (Alias: /goto)",
+    "/goto": "Usage: /goto <path>\nAlias for /cd. Change the agent\'s active working directory immediately.",
+    "/export": "Usage: /export [path]\nExport the full conversation history to a Markdown file. If path is omitted, exports to current directory.",
+    "/restore": "Usage: /restore <id>\nRestore a file to its backed-up snapshot using the ID from /backups.",
+    "/model": "Usage: /model [num|id]\nShow the numbered model catalog. Switch by passing the number or literal ID.",
+    "/ctxlog": "Usage: /ctxlog [n]\nView the context bubble sent with a past turn. Default is the most recent turn.",
+    "/logs2md": "Usage: /logs2md [path]\nConvert a session log to Markdown and zip it with a timestamp. No arg = current session.",
+    "/budget": "Usage: /budget [name val]\nView or set context budget limits (e.g., max tokens, category percentages).",
+    "/rollback": "Usage: /rollback <lbl>\nRollback all files in a named checkpoint to their prior state.",
+    "/jobstart": "Usage: /jobstart <name>\nStart a job from the jobs/ folder. Injects its goal and tasks into the system prompt.",
+    "/amnesia": "Usage: /amnesia\nForce-compress the live session history to a recap, then wipe agent memory. On-disk logs are untouched. Auto-feeds recap back in unless auto_amnesia_memory_retrieval is off.",
+    "/engine": "Usage: /engine\nToggle between the REST engine (standard API calls) and the Interactions engine (native function calling loop)."
+}
+
 def _build_help_text() -> str:
-    # Each command gets its own line; its description follows on the next
-    # line as a "- " bullet. No column-padding needed since command and
-    # description no longer share a line.
     lines = [f"{C.RED_B}NewAgent Slash Commands:{C.RESET}"]
+    max_cmd_len = max(len(cmd) for cmd, _ in HELP_COMMANDS)
     for cmd, desc in HELP_COMMANDS:
-        lines.append(f"{C.RED_B}{cmd}{C.RESET}")
-        lines.append(f"{C.WHITE}- {desc}{C.RESET}")
+        padded_cmd = f"{cmd:<{max_cmd_len}}"
+        lines.append(f"  {C.RED_B}{padded_cmd}{C.RESET} - {C.WHITE}{desc}{C.RESET}")
+    lines.append(f"\n{C.YELLOW}Tip: Type {C.RED_B}/<command> help{C.YELLOW} (e.g. {C.RED_B}/keys help{C.YELLOW}) for verbose usage!{C.RESET}")
     return "\n" + "\n".join(lines) + "\n"
+
 
 HELP_TEXT = _build_help_text()
 
@@ -145,6 +166,17 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
     parts = raw.strip().split(maxsplit=1)
     cmd = parts[0].lower()
     arg = parts[1] if len(parts) > 1 else ""
+
+    if arg.strip().lower() == "help":
+        if cmd in VERBOSE_HELP:
+            return True, f"{C.RED_B}{cmd} Help:{C.RESET}\n{VERBOSE_HELP[cmd]}"
+        else:
+            desc = "No verbose help available."
+            for c, d in HELP_COMMANDS:
+                if c == cmd:
+                    desc = d
+                    break
+            return True, f"{C.RED_B}{cmd}{C.RESET} - {desc}\nNo detailed help available for this command."
 
     if cmd == "/help":
         return True, HELP_TEXT
@@ -226,6 +258,18 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
     elif cmd == "/engine":
         current = ctx["config"]["engine_mode"]
         new = "interactions" if current == "rest" else "rest"
+        catalog_path = ctx["_config_dir"] / "gemini_catalog.bejson"
+        catalog = rest.load_model_catalog(catalog_path)
+        model_reg = ctx.get("model_reg")
+        active_model = model_reg.active if model_reg else ""
+        provider = "gemini"
+        if model_reg:
+            for row in catalog:
+                if row.get("model_string") == active_model:
+                    provider = row.get("provider") or "gemini"
+                    break
+        if new == "interactions" and provider != "gemini":
+            return True, f"Cannot switch to Interactions engine: active model '{active_model}' uses provider '{provider}'. Interactions API is Gemini-only. Switch to a Gemini model first via /model."
         ctx["config"]["engine_mode"] = new
         ctx["_save_config"]()
         ctx["_init_engine"]()
@@ -309,26 +353,76 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
 
         if sub_parts and sub_parts[0].lower() == "deactivate":
             if len(sub_parts) < 2 or not sub_parts[1].strip():
-                return True, f"{C.RED_B}Usage:{C.RESET} /keys deactivate <key-suffix>  (e.g. /keys deactivate 3xvVgA)"
+                return True, f"{C.RED_B}Usage:{C.RESET} /keys deactivate <key-hash>  (e.g. /keys deactivate a1b2c3)"
             suffix = sub_parts[1].strip()
             match = key_reg.find_key_by_suffix(suffix)
             if match is None:
-                # Distinguish "not found" from "ambiguous" so the person
-                # isn't left guessing which case they hit.
-                any_hits = [k for k in key_reg.keys if k.endswith(suffix)]
+                any_hits = [k for k in key_reg.keys if k.endswith(suffix) or key_reg._get_key_hash(k).startswith(suffix)]
                 if len(any_hits) > 1:
-                    return True, f"{C.RED_B}Ambiguous:{C.RESET} {len(any_hits)} keys end in '{suffix}' -- use a longer suffix."
-                return True, f"{C.RED_B}Not found:{C.RESET} no active key ends in '{suffix}'. Check /keys for the current list."
+                    return True, f"{C.RED_B}Ambiguous:{C.RESET} {len(any_hits)} keys match '{suffix}' -- use a longer prefix/suffix."
+                return True, f"{C.RED_B}Not found:{C.RESET} no active key matches '{suffix}'. Check /keys for the current list."
             ok = key_reg.deactivate_key(match)
             if ok:
-                return True, f"{C.RED_B}Deactivated{C.RESET} key ...{match[-6:]} (is_active=False, removed from rotation)."
-            return True, f"{C.RED_B}Failed{C.RESET} to deactivate ...{match[-6:]} -- see logs for details."
+                return True, f"{C.RED_B}Deactivated{C.RESET} key {key_reg._get_key_hash(match)} (is_active=False, removed from rotation)."
+            return True, f"{C.RED_B}Failed{C.RESET} to deactivate {key_reg._get_key_hash(match)} -- see logs for details."
 
-        lines = [f"{C.RED_B}API Key Registry:{C.RESET}"]
-        for i, k in enumerate(key_reg.keys):
-            calls = ctx["key_call_counts"].get(k, 0)
-            avail = "Available" if key_reg._is_available(k) else "Cooling Down"
-            lines.append(f"  [{i+1}] ...{k[-6:]} : {calls} calls ({avail})")
+        if sub_parts and sub_parts[0].lower() in ("flag", "unflag"):
+            usage_msg = (f"{C.RED_B}Usage:{C.RESET} /keys {sub_parts[0].lower()} <hash-prefix|slot|uuid|label> "
+                         f"<flag[,flag]> [note]   flags e.g. paid, leaked, bad, revoked")
+            rest_parts = sub_parts[1].split(maxsplit=2) if len(sub_parts) > 1 else []
+            if len(rest_parts) < 2:
+                return True, usage_msg
+            ident, flag_text = rest_parts[0], rest_parts[1]
+            note = rest_parts[2] if len(rest_parts) > 2 else ""
+            hits = key_reg.find_known_keys(ident)
+            if len(hits) != 1:
+                if not hits:
+                    ledger_hits = key_reg.ledger.find_by_prefix(ident) if len(ident) >= 6 else []
+                    if len(ledger_hits) == 1:
+                        entry_hash = ledger_hits[0]["ledger_key_hash"]
+                        flags = rest.key_ledger_parse_flags(ledger_hits[0].get("ledger_flags"))
+                        changes = rest.key_ledger_parse_flags(flag_text)
+                        if sub_parts[0].lower() == "flag":
+                            flags = flags | changes
+                        else:
+                            flags = flags - changes
+                        key_reg.ledger.set_flags(entry_hash, flags, note)
+                        return True, f"Ledger entry {entry_hash[:12]} flags now '{rest.key_ledger_format_flags(flags)}'."
+                    return True, f"{C.RED_B}Not found:{C.RESET} nothing matches '{ident}'."
+                return True, f"{C.RED_B}Ambiguous:{C.RESET} {len(hits)} keys match '{ident}' -- use a longer hash prefix or slot."
+            if sub_parts[0].lower() == "flag":
+                ok = key_reg.flag_key(hits[0], add=[flag_text], note=note)
+            else:
+                ok = key_reg.flag_key(hits[0], remove=[flag_text], note=note)
+            meta = key_reg.key_metadata.get(hits[0], {})
+            return True, f"Key {key_reg._get_key_hash(hits[0])} flag now '{meta.get('flag') or '-'}'."
+
+        if sub_parts and sub_parts[0].lower() == "ledger":
+            entries = key_reg.ledger.list_all()
+            lines = [f"{C.RED_B}Key Ledger ({len(entries)} entries):{C.RESET}"]
+            for entry in entries:
+                flags = entry.get("ledger_flags") or "-"
+                lines.append(f"  {entry['ledger_key_hash'][:12]}  {entry.get('ledger_label') or '?':16} "
+                             f"flags={flags:18} last_seen={entry.get('ledger_last_seen_at') or '?'}")
+            return True, "\n".join(lines)
+
+        lines = [f"{C.RED_B}API Key Registry:{C.RESET} (usable {len(key_reg.keys)}/{len(key_reg.key_metadata)})"]
+        ordered = sorted(key_reg.key_metadata.items(), key=lambda kv: kv[1].get("slot") or 0)
+        for k, meta in ordered:
+            if str(meta.get("label", "")).startswith("REDACTED") or k.startswith(key_reg.PLACEHOLDER_PREFIX):
+                continue
+            usage = key_reg.usage.get(meta["key_hash"]) or {}
+            state = "active" if meta.get("is_active", True) else "deactivated"
+            if meta.get("cooldown_until") and meta["cooldown_until"] > key_reg._now():
+                state = f"cooldown({int(meta['cooldown_until'] - key_reg._now())}s)"
+            last_err = usage.get("usage_last_error") or ""
+            lines.append(
+                f"  slot {meta.get('slot'):>3} {key_reg._get_key_hash(k)} {meta.get('label', ''):14} "
+                f"[{meta.get('flag') or '-'}] {state:12} ok={usage.get('usage_success_count', 0)} "
+                f"fail={usage.get('usage_failure_count', 0)} last={usage.get('usage_last_status') or '-'}"
+                + (f" ({last_err[:60]})" if last_err and usage.get("usage_last_status") != "ok" else "")
+            )
+        lines.append("  /keys flag <slot|hash> <paid|leaked|bad|...> [note]  ·  /keys unflag ...  ·  /keys ledger")
         return True, "\n".join(lines)
 
     elif cmd == "/model":
@@ -362,12 +456,29 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
             if match is None:
                 return True, f"No catalog entry for number {arg}. Use /model with no argument to see the list."
             model_reg.set_active(match["model_string"])
-            return True, f"Activated model: {match['display_name']} ({match['model_string']})"
+            prov = match.get("provider") or "gemini"
+            msg = f"Activated model: {match['display_name']} ({match['model_string']})"
+            if prov != "gemini":
+                msg += f" [Provider: {prov}]"
+                if ctx["config"].get("engine_mode") == "interactions":
+                    ctx["config"]["engine_mode"] = "rest"
+                    ctx["_save_config"]()
+                    ctx["_init_engine"]()
+                    msg += " (Auto-switched engine to REST: non-Gemini provider)"
+            return True, msg
 
         # Non-numeric: treat as a literal model ID, preserving prior behavior
         # for anyone scripting this or using a model not yet in the catalog.
         model_reg.set_active(arg)
-        return True, f"Activated model: {arg}"
+        msg = f"Activated model: {arg}"
+        matched_row = next((r for r in catalog if r.get("model_string") == arg), None)
+        prov = matched_row.get("provider") if matched_row else ("openrouter" if "/" in arg else "gemini")
+        if prov != "gemini" and ctx["config"].get("engine_mode") == "interactions":
+            ctx["config"]["engine_mode"] = "rest"
+            ctx["_save_config"]()
+            ctx["_init_engine"]()
+            msg += f" [Provider: {prov}] (Auto-switched engine to REST: non-Gemini provider)"
+        return True, msg
 
     elif cmd == "/history":
         lines = [f"{C.RED_B}Conversation History:{C.RESET}"]
@@ -555,9 +666,9 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
             if not isinstance(doc, dict):
                 return True, f"Checkpoint file unreadable: {cp_path}"
             fmap = bejson_core_get_field_map(doc)
-            label_idx = fmap.get("label", 0)
-            bids_idx = fmap.get("backup_ids", 1)
-            created_idx = fmap.get("created_at", 2)
+            label_idx = fmap["label"]
+            bids_idx = fmap["backup_ids"]
+            created_idx = fmap["created_at"]
             lines = [f"{C.RED_B}Rollback Checkpoints:{C.RESET}"]
             for row in doc.get("Values", []):
                 lines.append(

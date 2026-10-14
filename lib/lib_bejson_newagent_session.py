@@ -2,12 +2,16 @@
 Library:        lib_bejson_newagent_session.py
 Family:         NewAgent
 Description:    Atomic session logger, resume file persistence, named session archiving.
-Version:        2.7.0
-Date:           2026-09-18
+Version:        2.8.0
+Date:           2026-10-13
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
 RELATIONAL_ID:  4e3130b9-3ccc-45c2-9eed-fa37fe0988f2
 
 CHANGELOG:
+- 2.8.0 (2026-10-13): Added prune_old_logs() (3-day hard delete of session
+  logs, raw API dumps and legacy archive zips; replaces zip-and-archive at
+  startup) and write-time secret redaction in SessionLogger.log().
+  archive_old_session_logs() kept for compatibility but no longer called.
 - 2.7.0 (2026-09-18): Remediation pass, audit finding #3 (Field-Map
   Fallback Landmine) plus a self-caught bug. (1) Added `import logging`
   -- this file called `logging.getLogger(__name__)` in 6 places but never
@@ -84,8 +88,9 @@ from lib_bejson_Core_bejson_core import (
     bejson_core_get_field_map,
 )
 from lib_bejson_Core_bejson_validator import validate_bejson
+import lib_bejson_newagent_errors as errors
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 
 _SESSION_INDEX_FIELDS = [
     {"name": "label", "type": "string"},
@@ -282,6 +287,50 @@ def archive_old_session_logs(logs_dir: Path, keep_recent: int = 3) -> list[str]:
     return archived
 
 
+LOG_RETENTION_DAYS = 3
+_PRUNE_GLOBS = ("session_*", "raw_api_debug_*", "raw_api_error_*")
+
+
+def prune_old_logs(logs_dir: Path, max_age_days: float = LOG_RETENTION_DAYS,
+                   protect_stems: tuple = ()) -> list[str]:
+    """
+    Elton's request (2026-10-13): logs are disposable -- anything in logs/
+    older than 3 days is deleted outright (no zipping, no archive). Covers
+    session_* transcripts (.bejson/.104db.bejson/.md/zips), raw_api_debug_*
+    and raw_api_error_* dumps, and anything under logs/archive/ (legacy).
+    Age is file mtime. logs/sessions/session_index.bejson (named-session
+    index) is never touched. `protect_stems` keeps a live session's files
+    even if its mtime is somehow stale. Returns names deleted. Cheap no-op
+    when nothing is old; never raises.
+    """
+    logs_dir = Path(logs_dir)
+    if not logs_dir.is_dir():
+        return []
+    cutoff = time.time() - max_age_days * 86400
+    candidates = []
+    for pattern in _PRUNE_GLOBS:
+        candidates.extend(p for p in logs_dir.glob(pattern) if p.is_file())
+    archive_dir = logs_dir / "archive"
+    if archive_dir.is_dir():
+        candidates.extend(p for p in archive_dir.iterdir() if p.is_file())
+    deleted = []
+    for path in candidates:
+        if any(stem and path.name.startswith(stem) for stem in protect_stems):
+            continue
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+                deleted.append(path.name)
+        except OSError as exc:
+            logging.getLogger(__name__).error("[Session] prune failed for %s: %s", path, exc)
+    if archive_dir.is_dir():
+        try:
+            archive_dir.rmdir()  # only succeeds when empty
+        except OSError:
+            pass
+    return deleted
+
+
 class SessionLogger:
     """
     Crash-safe session transcript, one BEJSON row per logged message.
@@ -376,6 +425,11 @@ class SessionLogger:
     ) -> None:
         ts = ts or datetime.now().strftime("%H:%M:%S")
         ts_iso = datetime.now().isoformat()
+        # 2026-10-13 audit fix: last line of defense -- nothing shaped like an
+        # API key is ever persisted to a transcript, whatever produced it.
+        content = errors.redact_secrets(content)
+        bubble_content = errors.redact_secrets(bubble_content)
+        observer_note = errors.redact_secrets(observer_note)
         with self._lock:
             rows = []
             if self.log_path.exists():

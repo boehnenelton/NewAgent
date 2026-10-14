@@ -142,6 +142,28 @@
       "legacy",
       "provocative",
       "2026-08-27"
+    ],
+    [
+      10,
+      "anthropic/claude-sonnet-5.5",
+      "Claude Sonnet 5.5 (OpenRouter)",
+      "pro",
+      "GA",
+      "OpenRouter Claude Sonnet 5.5 flagship.",
+      "legacy",
+      "openrouter",
+      ""
+    ],
+    [
+      11,
+      "liquid/lfm-2.5-2.6b:free",
+      "Liquid LFM 2.5 2.6B Free (OpenRouter)",
+      "flash",
+      "GA",
+      "OpenRouter free model tier.",
+      "legacy",
+      "openrouter",
+      ""
     ]
   ]
 }

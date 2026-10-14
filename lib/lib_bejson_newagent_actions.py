@@ -362,10 +362,10 @@ async def run_action_hook(
         if not isinstance(doc, dict):
             return True, ""
         fmap = bejson_core_get_field_map(doc)
-        act_idx = fmap.get("action_type", 0)
-        evt_idx = fmap.get("event", 1)
-        cmd_idx = fmap.get("command", 2)
-        ena_idx = fmap.get("enabled", 3)
+        act_idx = fmap["action_type"]
+        evt_idx = fmap["event"]
+        cmd_idx = fmap["command"]
+        ena_idx = fmap["enabled"]
 
         matching_cmds = []
         for row in doc.get("Values", []):
@@ -612,9 +612,9 @@ def do_checklist_check(path: str, task_id: str, cwd: str) -> str:
         return f"[ERROR] Could not load {path} as BEJSON."
 
     fmap = bejson_core_get_field_map(doc)
-    id_idx = fmap.get("task_id", 0)
-    status_idx = fmap.get("status", 2)
-    ts_idx = fmap.get("completed_ts", 3)
+    id_idx = fmap["task_id"]
+    status_idx = fmap["status"]
+    ts_idx = fmap["completed_ts"]
 
     found = False
     for row in doc.get("Values", []):
@@ -669,9 +669,9 @@ def do_checklist_view(path: str, cwd: str) -> str:
         return f"[ERROR] Could not load {path} as BEJSON."
 
     fmap = bejson_core_get_field_map(doc)
-    id_idx = fmap.get("task_id", 0)
-    desc_idx = fmap.get("description", 1)
-    status_idx = fmap.get("status", 2)
+    id_idx = fmap["task_id"]
+    desc_idx = fmap["description"]
+    status_idx = fmap["status"]
 
     lines = [f"{path} — '{doc.get('Job_Title', '?')}':"]
     for row in doc.get("Values", []):
@@ -1125,7 +1125,7 @@ def do_checkpoint(label: str, backups_dir: Path) -> str:
                     "[Checkpoint] %s failed structural validation: %s", cp_path, result.errors
                 )
             fmap = bejson_core_get_field_map(doc)
-            label_idx = fmap.get("label", 0)
+            label_idx = fmap["label"]
             existing = doc.get("Values", [])
 
     live_bids = get_live_backup_ids()
@@ -1922,8 +1922,8 @@ def rollback_checkpoint(label: str, backups_dir: Path) -> tuple[bool, str]:
         if not isinstance(doc, dict):
             return False, f"Checkpoint file unreadable: {cp_path}"
         fmap = bejson_core_get_field_map(doc)
-        label_idx = fmap.get("label", 0)
-        bids_idx = fmap.get("backup_ids", 1)
+        label_idx = fmap["label"]
+        bids_idx = fmap["backup_ids"]
         rows = doc.get("Values", [])
         target = next((r for r in rows if r[label_idx] == label), None)
         if not target:

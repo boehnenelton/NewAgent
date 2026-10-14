@@ -87,6 +87,77 @@ expect either to carry forward history from the old BEJSON CMS project.
   pixel-count caps before any decode, streamed uploads, chunked hashing,
   server-side pagination. Do not "optimize" this back toward parallelism.
 
+## CLI Quick Reference (`newagent-manage.py`)
+
+Headless management of live data without running Flask servers:
+
+```bash
+# Status & System Operations
+python3 src/newagent-manage.py status
+python3 src/newagent-manage.py factory-reset
+python3 src/newagent-manage.py backup [--dir /path/to/dir]
+python3 src/newagent-manage.py restore /path/to/backup.zip
+
+# Content (Pages, Authors, Categories)
+python3 src/newagent-manage.py page list
+python3 src/newagent-manage.py page add "Title" --category "Uncategorized" --author "Author Name" --body body.html
+python3 src/newagent-manage.py page update <uuid> "New Title" --body new_body.html
+python3 src/newagent-manage.py page delete <uuid>
+python3 src/newagent-manage.py page import --html article.html --title "Imported Page" --category "Uncategorized"
+python3 src/newagent-manage.py page import --app <app_uuid> --title "Embedded App Page"
+
+python3 src/newagent-manage.py author list
+python3 src/newagent-manage.py author add "Author Name" --bio "Bio text" --image avatar.jpg
+python3 src/newagent-manage.py author update "Author Name" --bio "Updated bio"
+python3 src/newagent-manage.py author delete "Author Name"
+
+python3 src/newagent-manage.py category list
+python3 src/newagent-manage.py category add "Category Name" category-slug
+python3 src/newagent-manage.py category update category-slug "Updated Name"
+python3 src/newagent-manage.py category delete category-slug
+
+# Assets & Apps
+python3 src/newagent-manage.py asset list
+python3 src/newagent-manage.py asset add /path/to/photo.jpg
+python3 src/newagent-manage.py asset delete photo.jpg
+python3 src/newagent-manage.py asset optimize [--dry-run]
+python3 src/newagent-manage.py asset list-external
+python3 src/newagent-manage.py asset add-external "Whitepaper" https://example.com/doc.pdf --type pdf
+python3 src/newagent-manage.py asset delete-external <extmedia_uuid>
+
+python3 src/newagent-manage.py app list
+python3 src/newagent-manage.py app add "App Name" --desc "Description" --entry index.html
+python3 src/newagent-manage.py app delete <app_uuid>
+
+# Navigation, Ads & Configuration
+python3 src/newagent-manage.py navlink list
+python3 src/newagent-manage.py navlink add "Label" /url
+python3 src/newagent-manage.py navlink delete "Label"
+
+python3 src/newagent-manage.py ad list
+python3 src/newagent-manage.py ad add "Ad Name" img_url target_url zone [--inactive]
+python3 src/newagent-manage.py ad update <ad_uuid> "Ad Name" img_url target_url zone [--inactive]
+python3 src/newagent-manage.py ad delete <ad_uuid>
+
+python3 src/newagent-manage.py config list
+python3 src/newagent-manage.py config set key_name value
+python3 src/newagent-manage.py config delete key_name
+
+# Skeleton Templates Workflow (Draft / Diff / Promote)
+python3 src/newagent-manage.py skeleton list [--theme behtml]
+python3 src/newagent-manage.py skeleton show default Home_Skeleton [--draft]
+python3 src/newagent-manage.py skeleton edit default Home_Skeleton
+python3 src/newagent-manage.py skeleton diff default Home_Skeleton
+python3 src/newagent-manage.py skeleton promote default Home_Skeleton
+python3 src/newagent-manage.py skeleton discard default Home_Skeleton
+python3 src/newagent-manage.py skeleton validate [--theme behtml]
+python3 src/newagent-manage.py skeleton new-theme my-theme [--from default]
+
+# Raw Database Dumps & Service Launch
+python3 src/newagent-manage.py db list <pages|authors|categories|assets|apps|ads|navlinks> [--filter <category_name>]
+python3 src/newagent-manage.py serve <admin|publisher>
+```
+
 ## Directory Map
 
 | Path | Contents |
