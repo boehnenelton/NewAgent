@@ -2,12 +2,13 @@
 Library:        lib_bejson_newagent_commands.py
 Family:         NewAgent
 Description:    TUI slash command handler and helper displays.
-Version:        1.20.0
+Version:        1.21.0
 Date:           2026-10-14
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  17dfbca4-d8ec-4993-9c87-9bb3cae53749
+RELATIONAL_ID:  d0c63257-dc19-4b37-97ff-ca4ce9e9a2d5
 
 CHANGELOG:
+- 1.21.0 (2026-10-14): Enhanced help text and catalog descriptions for OpenRouter model switching.
 - 1.20.0 (2026-10-14): Added provider routing awareness to /engine and /model.
   Blocks switching to Interactions engine if the active model uses a non-Gemini provider,
   and displays provider in /model switch confirmations.
@@ -73,7 +74,7 @@ import lib_bejson_newagent_context_bubble as context_bubble
 import lib_bejson_newagent_engine_rest as rest
 import lib_bejson_newagent_jobs as jobs_lib
 
-VERSION = "1.20.0"
+VERSION = "1.21.0"
 
 HELP_COMMANDS: list[tuple[str, str]] = [
     ("/help", "Show this help reference"),
@@ -95,7 +96,7 @@ HELP_COMMANDS: list[tuple[str, str]] = [
     ("/restore", "Restore a file to its backed-up snapshot"),
     ("/sessions", "List archived sessions"),
     ("/keys", "API Keys manager (list/flag/deactivate/ledger)"),
-    ("/model", "Show model catalog or switch active model"),
+    ("/model", "Show model catalog or switch active model (Gemini & OpenRouter)"),
     ("/config", "Display active ScriptConfig parameters"),
     ("/stats", "Display session statistics"),
     ("/status", "Show circuit-breaker state, uptime, active key, current model"),
@@ -126,14 +127,14 @@ VERBOSE_HELP: dict[str, str] = {
     "/goto": "Usage: /goto <path>\nAlias for /cd. Change the agent\'s active working directory immediately.",
     "/export": "Usage: /export [path]\nExport the full conversation history to a Markdown file. If path is omitted, exports to current directory.",
     "/restore": "Usage: /restore <id>\nRestore a file to its backed-up snapshot using the ID from /backups.",
-    "/model": "Usage: /model [num|id]\nShow the numbered model catalog. Switch by passing the number or literal ID.",
+    "/model": "Usage: /model [num|id]\nShow the model catalog or switch active model.\n  /model               - List all available models (Gemini & OpenRouter)\n  /model 10            - Switch to Claude Sonnet 5.5 (OpenRouter)\n  /model 11            - Switch to Liquid LFM 2.5 Free (OpenRouter)\n  /model <provider/id> - Switch to any OpenRouter model (e.g. meta-llama/llama-3.3-70b-instruct)\n  * Non-Gemini models automatically route through REST engine and use the OpenRouter key pool.",
     "/ctxlog": "Usage: /ctxlog [n]\nView the context bubble sent with a past turn. Default is the most recent turn.",
     "/logs2md": "Usage: /logs2md [path]\nConvert a session log to Markdown and zip it with a timestamp. No arg = current session.",
     "/budget": "Usage: /budget [name val]\nView or set context budget limits (e.g., max tokens, category percentages).",
     "/rollback": "Usage: /rollback <lbl>\nRollback all files in a named checkpoint to their prior state.",
     "/jobstart": "Usage: /jobstart <name>\nStart a job from the jobs/ folder. Injects its goal and tasks into the system prompt.",
     "/amnesia": "Usage: /amnesia\nForce-compress the live session history to a recap, then wipe agent memory. On-disk logs are untouched. Auto-feeds recap back in unless auto_amnesia_memory_retrieval is off.",
-    "/engine": "Usage: /engine\nToggle between the REST engine (standard API calls) and the Interactions engine (native function calling loop)."
+    "/engine": "Usage: /engine\nToggle between the REST engine (standard API calls, used for Gemini & OpenRouter) and the Interactions engine (Gemini stateful interactions loop).\n  * Note: OpenRouter models require the REST engine and will auto-switch to REST if selected."
 }
 
 def _build_help_text() -> str:
@@ -431,7 +432,7 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
         catalog = rest.load_model_catalog(catalog_path)
 
         if not arg:
-            lines = [f"{C.RED_B}Gemini Model Catalog:{C.RESET}"]
+            lines = [f"{C.RED_B}Model Catalog (Gemini & OpenRouter):{C.RESET}"]
             # FIX (2026-08-31, audit F-46): surfaces here since /model is
             # the one place a person actually looks at this catalog --
             # see check_catalog_key_expiry()'s own docstring for the full
@@ -448,7 +449,7 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
                     f"({row.get('model_string')}) -- {row.get('notes', '')}"
                 )
             lines.append(f"\nActive model: {model_reg.active}")
-            lines.append("Enter a number above to switch, or /model <model-id> for a literal ID not in the catalog.")
+            lines.append("Enter a number above to switch, or /model <provider/model-id> for any OpenRouter or Gemini model.")
             return True, "\n".join(lines)
 
         if arg.isdigit():
