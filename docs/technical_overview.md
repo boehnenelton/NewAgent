@@ -61,3 +61,12 @@ Class: _ScopedModelRegistry(active_model) -- throwaway `.active`-only stand-in f
 - cmd_list_sessions / cmd_show_session / cmd_send_signal
 - cmd_dispatch / cmd_resume
 - build_parser()
+
+## lib_bejson_newagent_help.py
+Data-driven help. Registry: config/help.bejson (BEJSON 104, Records_Type HelpEntry); help_topic is the topic discriminator, help_kind is topic | command | note | example.
+- load_registry(path) -> Optional[HelpRegistry]  (mtime-cached; None if missing/malformed)
+- resolve(reg, query) -> (kind, obj)  (topic > command > unique prefix > unknown)
+- render_index(reg) / render_topic(reg, topic) / render_command(reg, cmd) / render_unknown(reg, query)
+- render_help(query="", config_dir=None)  (entry point for /help [query])
+- render_command_help(cmd, config_dir=None) -> Optional[str]  (entry point for /<cmd> help)
+- registry_path_for(config_dir)

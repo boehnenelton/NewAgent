@@ -2,12 +2,13 @@
 Library:        lib_bejson_newagent_session.py
 Family:         NewAgent
 Description:    Atomic session logger, resume file persistence, named session archiving.
-Version:        2.8.0
-Date:           2026-10-13
+Version:        2.9.0
+Date:           2026-10-14
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  4e3130b9-3ccc-45c2-9eed-fa37fe0988f2
+RELATIONAL_ID:  9089c628-6625-4cc0-94b2-d363df24cfe6
 
 CHANGELOG:
+- 2.9.0 (2026-10-14): Markdown transcript export uses a "--------" divider with blank lines around it.
 - 2.8.0 (2026-10-13): Added prune_old_logs() (3-day hard delete of session
   logs, raw API dumps and legacy archive zips; replaces zip-and-archive at
   startup) and write-time secret redaction in SessionLogger.log().
@@ -90,7 +91,7 @@ from lib_bejson_Core_bejson_core import (
 from lib_bejson_Core_bejson_validator import validate_bejson
 import lib_bejson_newagent_errors as errors
 
-VERSION = "2.8.0"
+VERSION = "2.9.0"
 
 _SESSION_INDEX_FIELDS = [
     {"name": "label", "type": "string"},
@@ -195,7 +196,7 @@ def _render_transcript_markdown(session_name: str, rows: list[list]) -> str:
             lines.append(bubble_content)
             lines.append("```")
             lines.append("</details>")
-        lines.append("\n---\n")
+        lines.append("\n--------\n")
     return "\n".join(lines)
 
 

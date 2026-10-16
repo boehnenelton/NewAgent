@@ -2,12 +2,14 @@
 Library:        lib_bejson_newagent_commands.py
 Family:         NewAgent
 Description:    TUI slash command handler and helper displays.
-Version:        1.22.0
-Date:           2026-10-14
+Version:        1.23.0
+Date:           2026-10-15
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  6a15518c-db43-4162-a535-e9319ee41150
+RELATIONAL_ID:  1483e391-9987-484e-b838-f24bcd72f6d7
 
 CHANGELOG:
+- 1.23.0 (2026-10-15): Help is now data-driven (lib_bejson_newagent_help + config/help.bejson): /help groups commands by topic, /help <topic>, /help <command>, /<cmd> help. Removed hardcoded HELP_COMMANDS / VERBOSE_HELP / HELP_TEXT.
+- 1.22.1 (2026-10-14): /export: timestamped entry headers and a "--------" divider with blank lines between entries.
 - 1.22.0 (2026-10-14): Added /model sync and /model refresh to dynamically pull
   100% free OpenRouter models into the catalog and assign menu numbers.
 - 1.21.0 (2026-10-14): Enhanced help text and catalog descriptions for OpenRouter model switching.
@@ -75,81 +77,9 @@ from lib_bejson_Core_bejson_core import bejson_core_load_file, bejson_core_get_f
 import lib_bejson_newagent_context_bubble as context_bubble
 import lib_bejson_newagent_engine_rest as rest
 import lib_bejson_newagent_jobs as jobs_lib
+import lib_bejson_newagent_help as help_lib
 
-VERSION = "1.22.0"
-
-HELP_COMMANDS: list[tuple[str, str]] = [
-    ("/help", "Show this help reference"),
-    ("/exit", "Exit and optionally archive named session"),
-    ("/cls", "Clear terminal screen"),
-    ("/clear", "Clear conversation history"),
-    ("/ml", "Toggle multi-line input mode"),
-    ("/feed", "Toggle live subprocess stdout/stderr streaming"),
-    ("/speak", "Toggle printing of TTS output"),
-    ("/ac", "Toggle auto-continue after action execution"),
-    ("/spk", "Cycle input mode: 0 (typed) -> 1 (STT) -> 2 (dialog) -> 0"),
-    ("/snip", "Snippet manager (add/del/list/off)"),
-    ("/dryrun", "Toggle dry-run mode (actions are simulated)"),
-    ("/cd", "Change active working directory immediately"),
-    ("/goto", "Alias for /cd"),
-    ("/history", "Print full scrollable history with role badges"),
-    ("/export", "Export full conversation to Markdown file"),
-    ("/backups", "List unexpired backups in backup_log.bejson"),
-    ("/restore", "Restore a file to its backed-up snapshot"),
-    ("/sessions", "List archived sessions"),
-    ("/keys", "API Keys manager (list/flag/deactivate/ledger)"),
-    ("/model", "Show model catalog, switch model, or /model sync for free models"),
-    ("/config", "Display active ScriptConfig parameters"),
-    ("/stats", "Display session statistics"),
-    ("/status", "Show circuit-breaker state, uptime, active key, current model"),
-    ("/engine", "Toggle between REST and Interactions engines"),
-    ("/toolscope", "Cycle interactions tool scope (all | shell_only)"),
-    ("/resumemode", "Toggle Interactions resume strategy"),
-    ("/checkpoints", "List saved named rollback checkpoints"),
-    ("/rollback", "Rollback all files in checkpoint to prior state"),
-    ("/ctxlog", "View the context bubble sent with a past turn (Context Button)"),
-    ("/logs2md", "Convert a session log to Markdown + a timestamped zip"),
-    ("/observer", "Toggle Part 4 context compression on/off"),
-    ("/init", "Scaffold an empty context.bejson in the current directory"),
-    ("/budget", "View or set context budget (max tokens, category percentages)"),
-    ("/gate", "Toggle confirmation gate for risky actions"),
-    ("/debug", "Toggle debug_mode (dump raw API request/response pairs)"),
-    ("/jobs", "List pending jobs in jobs/ and show the currently active one"),
-    ("/jobstart", "Start a job (injects its goal+tasks into the system prompt)"),
-    ("/amnesia", "Force-compress the live session history to a recap, then wipe agent memory"),
-    ("/rebirth", "Retrieve the last /amnesia recap and feed it back into memory"),
-    ("/about", "Display version and author information"),
-]
-
-VERBOSE_HELP: dict[str, str] = {
-    "/help": "Usage: /help\nDisplays a clean list of all available commands. Type /<command> help for more details on a specific command.",
-    "/keys": "Usage: /keys [subcommand]\nManage your API keys.\n  /keys                - View API keys status and call counts.\n  /keys deactivate <hash> - Permanently deactivate a key.\n  /keys flag <hash> <flag> [note] - Flag a key (e.g. leaked, paid).\n  /keys unflag <hash> <flag> - Remove a flag.\n  /keys ledger         - View full persistent key ledger.",
-    "/snip": "Usage: /snip [cmd]\nManage reusable snippets.\n  /snip list       - List all active snippets.\n  /snip add <lbl>|<txt> - Add a new snippet.\n  /snip del <id>   - Delete a snippet.\n  /snip off <id>   - Disable a snippet temporarily.",
-    "/cd": "Usage: /cd <path>\nChange the agent\'s active working directory immediately. (Alias: /goto)",
-    "/goto": "Usage: /goto <path>\nAlias for /cd. Change the agent\'s active working directory immediately.",
-    "/export": "Usage: /export [path]\nExport the full conversation history to a Markdown file. If path is omitted, exports to current directory.",
-    "/restore": "Usage: /restore <id>\nRestore a file to its backed-up snapshot using the ID from /backups.",
-    "/model": "Usage: /model [num|id|sync]\nShow the model catalog, switch active model, or sync free models.\n  /model               - List all available models (Gemini & OpenRouter)\n  /model sync          - Pull live 100% free models from OpenRouter into catalog\n  /model <num>         - Switch model by catalog number (e.g. /model 10)\n  /model <provider/id> - Switch to any OpenRouter model (e.g. meta-llama/llama-3.3-70b-instruct)\n  * Non-Gemini models automatically route through REST engine and use the OpenRouter key pool.",
-    "/ctxlog": "Usage: /ctxlog [n]\nView the context bubble sent with a past turn. Default is the most recent turn.",
-    "/logs2md": "Usage: /logs2md [path]\nConvert a session log to Markdown and zip it with a timestamp. No arg = current session.",
-    "/budget": "Usage: /budget [name val]\nView or set context budget limits (e.g., max tokens, category percentages).",
-    "/rollback": "Usage: /rollback <lbl>\nRollback all files in a named checkpoint to their prior state.",
-    "/jobstart": "Usage: /jobstart <name>\nStart a job from the jobs/ folder. Injects its goal and tasks into the system prompt.",
-    "/amnesia": "Usage: /amnesia\nForce-compress the live session history to a recap, then wipe agent memory. On-disk logs are untouched. Auto-feeds recap back in unless auto_amnesia_memory_retrieval is off.",
-    "/engine": "Usage: /engine\nToggle between the REST engine (standard API calls, used for Gemini & OpenRouter) and the Interactions engine (Gemini stateful interactions loop).\n  * Note: OpenRouter models require the REST engine and will auto-switch to REST if selected."
-}
-
-def _build_help_text() -> str:
-    lines = [f"{C.RED_B}NewAgent Slash Commands:{C.RESET}"]
-    max_cmd_len = max(len(cmd) for cmd, _ in HELP_COMMANDS)
-    for cmd, desc in HELP_COMMANDS:
-        padded_cmd = f"{cmd:<{max_cmd_len}}"
-        lines.append(f"  {C.RED_B}{padded_cmd}{C.RESET} - {C.WHITE}{desc}{C.RESET}")
-    lines.append(f"\n{C.YELLOW}Tip: Type {C.RED_B}/<command> help{C.YELLOW} (e.g. {C.RED_B}/keys help{C.YELLOW}) for verbose usage!{C.RESET}")
-    return "\n" + "\n".join(lines) + "\n"
-
-
-HELP_TEXT = _build_help_text()
+VERSION = "1.23.0"
 
 def build_about_text() -> str:
     return f"""
@@ -171,18 +101,13 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
     arg = parts[1] if len(parts) > 1 else ""
 
     if arg.strip().lower() == "help":
-        if cmd in VERBOSE_HELP:
-            return True, f"{C.RED_B}{cmd} Help:{C.RESET}\n{VERBOSE_HELP[cmd]}"
-        else:
-            desc = "No verbose help available."
-            for c, d in HELP_COMMANDS:
-                if c == cmd:
-                    desc = d
-                    break
-            return True, f"{C.RED_B}{cmd}{C.RESET} - {desc}\nNo detailed help available for this command."
+        text = help_lib.render_command_help(cmd, ctx.get("_config_dir"))
+        if text is None:
+            return True, f"{C.RED_B}{cmd}{C.RESET} - no help entry. Try /help."
+        return True, text
 
     if cmd == "/help":
-        return True, HELP_TEXT
+        return True, help_lib.render_help(arg, ctx.get("_config_dir"))
 
     elif cmd == "/about":
         return True, build_about_text()
@@ -725,12 +650,14 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
             export_path = Path(arg).expanduser().resolve()
         else:
             export_path = Path(ctx["_cwd"]) / f"session_export_{ts}.md"
-        lines = [f"# NewAgent Session Export", f"Exported: {datetime.now().isoformat()}", ""]
+        lines = ["# NewAgent Session Export", f"Exported: {datetime.now().isoformat()}", ""]
         for msg in history:
             role  = "**YOU**" if msg["role"] == "user" else "**GEMINI**"
-            stamp = msg.get("_ts", "")
-            lines.append(f"### {role} {stamp}")
+            stamp = msg.get("_ts", "") or datetime.now().isoformat(timespec="seconds")
+            lines.append(f"### [{stamp}] {role}")
             lines.append(msg["content"])
+            lines.append("")
+            lines.append("--------")
             lines.append("")
         try:
             export_path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,21 +1,18 @@
 """
-Library:        lib_bejson_Core_bejson_errors.py
-Family:         Core
-Description:    Unified error registry for BEJSON ecosystem.
-Version:        2.4.0
-Date:           2026-07-18
-Author:         Elton Boehnen
-Contact:        eltonboehnen@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
-Format_Creator: Elton Boehnen
-RELATIONAL_ID:  9f2e6a1c-4b8d-4e3f-a7c5-1d6b3e8f2a90
-
-Changelog:
-  2.4.0 - Removed Core_Nesting range (130-159) and Cognition range
-          (270-289) — those families now own their codes in
-          lib_bejson_CoreNesting_bejson_errors.py and
-          lib_bejson_Cognition_bejson_errors.py respectively. MFDB codes
-          (30-42, 50-72) remain here: MFDB is implemented as part of the
-          Core family, not a separate family directory.
+Library:         lib_bejson_Core_bejson_errors.py
+Family:          Core
+Module Purpose:  Unified numeric error-code registry shared by the BEJSON, MFDB and Nesting modules.
+Architecture:    Shared numeric error-code registry. Codes are grouped by layer (BEJSON validation/core, MFDB, Nesting); a code name containing MFDB does not make the module that raises it MFDB-specific.
+Format_Scope:    All layers (registry only)
+Glossary:        BEJSON 104, 104a and 104db are the three file formats (Format_Version). 104db = ONE file holding 2+ entity types
+                 (Record_Type_Parent discriminator, null-padding). MFDB is NOT a format and NOT 104db: it is a layer made of one 104a manifest
+                 (104a.mfdb.bejson) plus dense 104 entity files linked by Parent_Hierarchy. MFDB-132 = an MFDB packed into one Chunked-104a document.
+Version:         2.4.4
+Release_Version: 300
+Date:            2026-10-02
+Author:          Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
+Format_Creator:  Elton Boehnen
+RELATIONAL_ID:   ca381fa1-dc57-41fc-9dc1-33b2c427e1a0
 """
 
 # ---------------------------------------------------------------------------
@@ -39,7 +36,7 @@ E_ATOMIC_WRITE_FAILED                = 15
 E_INVALID_FORMAT_CREATOR             = 16
 
 # BEJSON Core ops (17-29)
-# Codes 17-19: parse/serialization layer — added v2.3.0 (parity with TS v2.3.0)
+# Codes 17-19: parse/serialization layer (same codes as TS)
 E_CORE_PARSE_ERROR                   = 17
 E_CORE_SERIALIZATION_ERROR           = 18
 E_CORE_NULL_DOCUMENT                 = 19
@@ -78,7 +75,7 @@ E_MFDB_INVALID_ARCHIVE               = 42
 
 # ---------------------------------------------------------------------------
 # MFDB Core ops (50-72)
-# Codes 57-60: added v2.3.0 (parity with TS MFDB_CORE_CODES v2.3.0)
+# Codes 57-60 match TS MFDB_CORE_CODES
 # ---------------------------------------------------------------------------
 E_MFDB_CORE_MANIFEST_NOT_FOUND       = 50
 E_MFDB_CORE_ENTITY_NOT_FOUND         = 51

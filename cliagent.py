@@ -3,10 +3,10 @@
 Name:         cliagent.py
 Family:       NewAgent
 Description:  CLI interface to run prompts against NewAgent engine (REST/Interactions) non-interactively or from scripts.
-Version:      1.3.1
+Version:      1.4.0
 Date:         2026-08-20
 Author:       Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID: f4a7c1e9-3b6d-4f8a-9c2e-6d1a4b7f9e53
+RELATIONAL_ID: 4d499311-7f0b-42cd-b1c9-40100ff4b8a0
 
 CHANGELOG:
 - 1.3.1 (2026-08-20): sync_keys_from_env_sources() now returns

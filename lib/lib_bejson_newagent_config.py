@@ -5,12 +5,14 @@ Description:    BEJSON 104a configuration initialization, loading, and saving.
                 Routes reads/writes through the canonical Core BEJSON library
                 (lib_bejson_Core_bejson_core) for atomic writes and structural
                 validation instead of hand-rolled json.load/dump.
-Version:        1.16.0
-Date:           2026-09-18
+Version:        1.18.0
+Date:           2026-10-14
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  e86387d8-9ec0-4c72-a2e0-de4b516902b3
+RELATIONAL_ID:  4b322718-69af-452c-a3e6-a1ee9dd34ab3
 
 CHANGELOG:
+- 1.18.0 (2026-10-16): New default max_auto_continue_turns=12 (agent.py auto-continue guard, pkg128).
+- 1.17.0 (2026-10-14): Added exec_output_cap_bytes default; documented <exec_bg> for long-running commands.
 - 1.16.0 (2026-09-18): Remediation pass, audit finding #1 (HIGH --
   locking reinvented per-file). get_or_create_web_auth_token() was a
   second, independently-reinvented instance of the same weaker
@@ -146,7 +148,7 @@ from lib_bejson_Core_bejson_core import (
 )
 from lib_bejson_Core_bejson_validator import validate_bejson
 
-VERSION = "1.16.0"
+VERSION = "1.18.0"
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG: list[tuple[str, Any, str]] = [
@@ -164,7 +166,9 @@ DEFAULT_CONFIG: list[tuple[str, Any, str]] = [
     ("max_actions_per_turn", 10, "Max action tags executed per model response"),
     ("auto_continue_enabled", True, "Auto-feed action results back to model"),
     ("max_autonomy_turns", 20, "Max consecutive autonomous turns (0=unlimited)"),
-    ("exec_timeout_seconds", 60, "Max seconds per shell command"),
+    ("max_auto_continue_turns", 12, "Max consecutive auto-continued turns (action results fed back to the model) before control returns to the user (0=unlimited). Loop guard added pkg128."),
+    ("exec_timeout_seconds", 60, "Max seconds per shell command. Long jobs (npm install, builds, downloads) are killed at this limit -- run them with <exec_bg> instead of raising it."),
+    ("exec_output_cap_bytes", 65536, "Max bytes of stdout / stderr kept per shell command (0 = uncapped). Excess is truncated with a notice."),
     ("exec_denylist", ["rm -rf /", "dd if=", "mkfs", ":(){:|:&};:"], "Commands blocked if any of these strings appears anywhere in them (2026-08-25: was 'prefixes blocked before execution' when the check was startswith-only -- audit F-03 found that trivially bypassed by e.g. 'echo hi && rm -rf /'; the check itself lives in lib_bejson_newagent_actions.is_command_denylisted() and is substring-anywhere now, this description is just kept accurate to match)"),
     ("web_auth_token", "", "Shared-secret token webagent.py requires on every request (X-Auth-Token header or ?token= query param). Auto-generated and saved here on first run if empty -- see webagent.py's WebAgentTerminal.__init__ (audit F-02)."),
     ("dryrun_mode", False, "When true: actions shown but not executed"),

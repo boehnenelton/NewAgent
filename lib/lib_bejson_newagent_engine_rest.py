@@ -5,12 +5,24 @@ Description:    REST API prompter with rotating key and cooldown registry.
                 Key/model/cooldown registries routed through the canonical
                 Core BEJSON library (atomic write + validation + field-map
                 access) instead of hand-rolled json.load/dump.
-Version:        1.21.0
-Date:           2026-10-14
+Version:        1.25.0
+Date:           2026-10-16
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  2208bc30-41e1-424d-8bb4-b76433923510
+RELATIONAL_ID:  948782db-99dc-41e4-b89e-42266c1572c9
 
 CHANGELOG:
+- 1.25.0 (2026-10-16): Key caches (config/keys*.bejson) no longer hold plaintext secrets. Rows store
+  "ENV:<var_name>"; real values are resolved from secureenv_file.json on every load and live in memory only.
+  Legacy plaintext caches are rewritten on first load (scrub_key_file). Rotated keys (value no longer matches
+  the row key_hash) load as unusable placeholders and sync adds the new key as a fresh row.
+- 1.24.0 (2026-10-16): OpenRouter request no longer sends Gemini-only `include_thoughts`; sends
+  reasoning={'exclude': True} instead. New _strip_inline_reasoning() applied to OpenRouter
+  responses (removes <think> blocks / lone </think> leaks from message.content).
+- 1.23.0 (2026-10-16): _parse_openai_compat_response() now coerces None content to ""
+  and converts any structured message.tool_calls entries into <|tool_call_start|>...<|tool_call_end|>
+  blocks so parse_actions() can execute them.
+- 1.22.1 (2026-10-14): Removed hardcoded stale User-Agent version string from the OpenRouter catalog fetch.
+- 1.22.0 (2026-10-14): sync_keys_from_env_file(): key ledger is authoritative -- active rows whose hash is flagged bad/revoked/leaked are deactivated on sync.
 - 1.21.0 (2026-10-14): Added is_openrouter_free_model(), fetch_openrouter_free_models(),
   and sync_openrouter_free_models_to_catalog() matching CLI_AI's dynamic free-tier discovery
   logic (zero pricing prompt/completion and :free/-free suffixes).
@@ -168,6 +180,7 @@ CHANGELOG:
 import json
 import logging
 import random
+import re
 import uuid
 import time
 import subprocess
@@ -197,7 +210,7 @@ from lib_bejson_newagent_key_ledger import (
     key_ledger_short_hash,
 )
 
-VERSION = "1.21.0"
+VERSION = "1.25.0"
 logger = logging.getLogger(__name__)
 
 COOLDOWN_429 = 60
@@ -429,11 +442,21 @@ def _parse_openai_compat_response(data: dict) -> tuple[str, dict]:
             f"REST response had no choices. body={data}"
         )
     try:
-        text = choices[0]["message"]["content"]
+        msg = choices[0]["message"]
+        text = msg.get("content") if isinstance(msg, dict) else msg["content"]
     except (KeyError, IndexError, TypeError) as shape_exc:
         raise errors.EngineParseError(
             f"REST response shape did not match expected choices[0].message.content: {shape_exc}"
         ) from shape_exc
+    if text is None:
+        text = ""
+    if isinstance(msg, dict) and isinstance(msg.get("tool_calls"), list):
+        tc_blocks = []
+        for tc in msg["tool_calls"]:
+            if isinstance(tc, dict):
+                tc_blocks.append(f"<|tool_call_start|>{json.dumps(tc)}<|tool_call_end|>")
+        if tc_blocks:
+            text = (text + "\n" + "\n".join(tc_blocks)).strip()
     usage = data.get("usage", {})
     return text, usage
 
@@ -458,11 +481,11 @@ def _build_openrouter_request(key, model, history, system_instruction, config, c
     if max_tokens:
         payload["max_tokens"] = max_tokens
         
-    # OpenRouter Specific: Include thoughts if supported by the model
-    # We could look at catalog_rows for 'thinking' but for now it's requested if supported.
-    for row in catalog_rows:
-        if row.get("model_string") == model and row.get("thinking"):
-            payload["include_thoughts"] = True
+    # OpenRouter reasoning control. `include_thoughts` is a Gemini parameter, not an
+    # OpenRouter one (it was silently ignored); OpenRouter's unified knob is the
+    # `reasoning` object. NewAgent only consumes message.content, so ask OpenRouter
+    # not to return the reasoning trace at all.
+    payload["reasoning"] = {"exclude": True}
 
     headers = {
         "Content-Type": "application/json",
@@ -472,8 +495,28 @@ def _build_openrouter_request(key, model, history, system_instruction, config, c
     }
     return url, headers, payload
 
+_THINK_BLOCK_RE = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>", re.DOTALL | re.IGNORECASE)
+_THINK_LONE_CLOSE_RE = re.compile(r"^.*?</think(?:ing)?>", re.DOTALL | re.IGNORECASE)
+
+
+def _strip_inline_reasoning(text: str) -> str:
+    """Remove chain-of-thought that some OpenRouter providers leak into
+    message.content (nemotron-3-super: 'Let's respond: ... Response: Hi!...'
+    reached the transcript in session_2026-10-15_18-17-06). Handles complete
+    <think>..</think> blocks and a lone trailing </think> (opening tag eaten
+    upstream). Plain-prose leaks with no tag cannot be detected safely and are
+    left alone."""
+    if not text or "think" not in text.lower():
+        return text
+    cleaned = _THINK_BLOCK_RE.sub("", text)
+    if re.search(r"</think(?:ing)?>", cleaned, re.IGNORECASE):
+        cleaned = _THINK_LONE_CLOSE_RE.sub("", cleaned, count=1)
+    return cleaned.strip()
+
+
 def _parse_openrouter_response(data: dict) -> tuple[str, dict]:
-    return _parse_openai_compat_response(data)
+    text, usage = _parse_openai_compat_response(data)
+    return _strip_inline_reasoning(text), usage
 
 PROVIDER_ADAPTERS = {
     "gemini": {
@@ -533,6 +576,136 @@ def _attempt_trailing_garbage_recovery(path: Path) -> Optional[dict]:
     else:
         logger.error("[Engine_REST] %s recovered in-memory but rewrite failed -- corruption will recur on next load.", path)
     return obj
+
+
+# ── env-sourced key references (pkg129) ────────────────────────────────────
+# Policy: API keys live ONLY in secureenv_file.json. The key cache files
+# (config/keys*.bejson) used to hold a plaintext copy of every env key, and that
+# copy was shipped inside the project archive (13 OpenRouter + 11 Gemini keys
+# leaked into an uploaded zip). The cache now stores "ENV:<var_name>" instead of
+# the secret; the real value is looked up in the env file on every load and held
+# in memory only. Nothing secret is ever written under the project directory.
+KEY_REF_PREFIX = "ENV:"
+_PLACEHOLDER_KEY_PREFIX = "REDACTED_KEY_PLACEHOLDER"
+_SANCTIONED_ENV_FILES = (
+    Path("/storage/emulated/0/.env/secure/secureenv_file.json"),
+    Path("/storage/emulated/0/.env/user/paths.json"),
+)
+_env_source_paths: list[Path] = []
+_env_lookup_cache: dict = {"sig": None, "map": {}}
+
+
+def _register_env_sources(paths: Iterable[Path]) -> None:
+    for p in paths:
+        p = Path(p)
+        if p not in _env_source_paths:
+            _env_source_paths.append(p)
+
+
+def _env_value_map() -> dict[str, str]:
+    """var_name -> var_value across every known env source (mtime-cached)."""
+    sources = [p for p in list(_env_source_paths) + list(_SANCTIONED_ENV_FILES) if p.exists()]
+    sig = tuple((str(p), p.stat().st_mtime_ns) for p in sources)
+    if _env_lookup_cache["sig"] == sig:
+        return _env_lookup_cache["map"]
+    out: dict[str, str] = {}
+    for p in sources:
+        try:
+            with open(p, "r", encoding="utf-8") as fh:
+                d = json.load(fh)
+            names = [f.get("name") for f in d.get("Fields", [])]
+            ni, vi = names.index("var_name"), names.index("var_value")
+            for row in d.get("Values", []):
+                if len(row) > max(ni, vi) and isinstance(row[ni], str) and isinstance(row[vi], str) and row[vi]:
+                    out.setdefault(row[ni], row[vi].strip())
+        except Exception as exc:  # never log values; path + error type only
+            logger.warning("[KeyRegistry] could not read env source %s: %s", p, type(exc).__name__)
+    _env_lookup_cache["sig"] = sig
+    _env_lookup_cache["map"] = out
+    return out
+
+
+def _keyfile_resolve(doc: dict) -> dict:
+    """In-memory: turn ENV:<label> references into real values (env file is the
+    only source). A reference whose env var is gone, or whose value no longer
+    matches the row's recorded key_hash (key rotated under the same name), becomes
+    an unusable placeholder instead of silently adopting the new key's flags."""
+    try:
+        fmap = bejson_core_get_field_map(doc)
+    except Exception:
+        return doc
+    ki, hi = fmap.get("api_key"), fmap.get("key_hash")
+    if ki is None:
+        return doc
+    env_map = None
+    for row in doc.get("Values", []):
+        if len(row) <= ki or not isinstance(row[ki], str):
+            continue
+        v = row[ki].strip()
+        if v.startswith(KEY_REF_PREFIX):
+            label = v[len(KEY_REF_PREFIX):]
+            env_map = env_map if env_map is not None else _env_value_map()
+            real = env_map.get(label, "")
+            expected = row[hi] if hi is not None and len(row) > hi else ""
+            if real and (not expected or key_ledger_hash_key(real) == expected):
+                row[ki] = real
+            else:
+                row[ki] = f"{_PLACEHOLDER_KEY_PREFIX}:{label}"
+        elif v.startswith(_PLACEHOLDER_KEY_PREFIX + ":"):
+            row[ki] = v
+    return doc
+
+
+def _keyfile_to_refs(doc: dict) -> tuple[dict, bool]:
+    """Copy of doc with every env-sourced secret replaced by ENV:<label>.
+    Returns (copy, changed)."""
+    import copy
+    out = copy.deepcopy(doc)
+    out.pop("_bejson_field_map", None)
+    fmap = bejson_core_get_field_map(out)
+    ki, li = fmap.get("api_key"), fmap.get("label")
+    changed = False
+    if ki is None or li is None:
+        return out, False
+    env_map = None
+    for row in out.get("Values", []):
+        if len(row) <= max(ki, li) or not isinstance(row[ki], str) or not isinstance(row[li], str):
+            continue
+        v, label = row[ki].strip(), row[li].strip()
+        if v.startswith(_PLACEHOLDER_KEY_PREFIX + ":"):
+            row[ki] = KEY_REF_PREFIX + v[len(_PLACEHOLDER_KEY_PREFIX) + 1:]
+            changed = True
+        elif v and not v.startswith(KEY_REF_PREFIX) and label:
+            env_map = env_map if env_map is not None else _env_value_map()
+            if env_map.get(label) == v:
+                row[ki] = KEY_REF_PREFIX + label
+                changed = True
+    return out, changed
+
+
+def _keyfile_write(path, doc: dict) -> bool:
+    """Atomic write of a key cache with secrets stripped to ENV: references."""
+    safe, _ = _keyfile_to_refs(doc)
+    return bejson_core_atomic_write(str(path), safe)
+
+
+def scrub_key_file(path) -> bool:
+    """One-shot migration: rewrite a legacy plaintext key cache as ENV: refs.
+    Returns True if the file was rewritten."""
+    path = Path(path)
+    if not path.exists():
+        return False
+    doc = bejson_core_load_file(str(path))
+    if not isinstance(doc, dict):
+        return False
+    safe, changed = _keyfile_to_refs(doc)
+    if not changed:
+        return False
+    if bejson_core_atomic_write(str(path), safe):
+        logger.warning("[KeyRegistry] %s: plaintext keys replaced with ENV: references "
+                       "(secrets now live only in the env file).", path.name)
+        return True
+    return False
 
 
 def _load_validated(path: Path) -> Optional[dict]:
@@ -605,10 +778,12 @@ class KeyRegistry:
     def _load_keys(self) -> None:
         if not self.keys_path.exists():
             return
+        scrub_key_file(self.keys_path)
         doc = _load_validated(self.keys_path)
         if doc is None:
             logger.error("[KeyRegistry] Failed to load keys from %s", self.keys_path)
             return
+        doc = _keyfile_resolve(doc)
         fmap = bejson_core_get_field_map(doc)
         if "api_key" not in fmap:
             logger.error("[KeyRegistry] %s has no api_key field", self.keys_path)
@@ -638,6 +813,8 @@ class KeyRegistry:
             key_val = rec.get("api_key")
             if not isinstance(key_val, str) or not key_val:
                 continue
+            if key_val.startswith(self.PLACEHOLDER_PREFIX):
+                continue  # unresolved ENV: ref -- keep its recorded hash
             full_hash = key_ledger_hash_key(key_val)
             if rec.get("key_hash") != full_hash:
                 rec["key_hash"] = full_hash
@@ -660,7 +837,7 @@ class KeyRegistry:
             new_doc = bejson_core_create_104a(
                 "ApiKey", out_fields, [[rec.get(n) for n in out_names] for rec in records],
             )
-            if bejson_core_atomic_write(str(self.keys_path), new_doc):
+            if _keyfile_write(self.keys_path, new_doc):
                 logger.warning("[KeyRegistry] Migrated %s: backfilled uuid/slot/flag/full key_hash.", self.keys_path.name)
             else:
                 logger.error("[KeyRegistry] Migration write failed for %s (continuing in memory)", self.keys_path)
@@ -944,6 +1121,7 @@ class KeyRegistry:
         if doc is None:
             logger.error("[KeyRegistry] could not load %s", self.keys_path)
             return False
+        doc = _keyfile_resolve(doc)
         fmap = bejson_core_get_field_map(doc)
         key_idx = fmap["api_key"]
         found = False
@@ -958,7 +1136,7 @@ class KeyRegistry:
             logger.warning("[KeyRegistry] key %s not found in %s", self._get_key_hash(key), self.keys_path)
             return False
         doc.pop("_bejson_field_map", None)
-        if not bejson_core_atomic_write(str(self.keys_path), doc):
+        if not _keyfile_write(self.keys_path, doc):
             logger.error("[KeyRegistry] atomic write failed for %s", self.keys_path)
             return False
         return True
@@ -1450,9 +1628,13 @@ def sync_keys_from_env_file(
             f"but none match var_name starting with '{key_prefix}' with a non-empty var_value"
         )
 
+    _register_env_sources([env_file_path])
     existing_doc = None
     if keys_path.exists():
+        scrub_key_file(keys_path)
         existing_doc = bejson_core_load_file(str(keys_path))
+        if isinstance(existing_doc, dict):
+            existing_doc = _keyfile_resolve(existing_doc)
     if not isinstance(existing_doc, dict):
         existing_doc = bejson_core_create_104a("ApiKey", list(_KEY_FIELDS), [])
 
@@ -1551,11 +1733,22 @@ def sync_keys_from_env_file(
                 r[active_idx] = False
                 deactivated += 1
 
+    # 2026-10-13 audit P0-4: the ledger is authoritative. A row that is still
+    # active but whose key hash carries a blocking flag (bad/revoked/leaked)
+    # is taken out of rotation here regardless of what the env file says.
+    # Un-flagging in the ledger is the only way back in.
+    for r in existing_rows:
+        if len(r) <= max(key_idx, label_idx, active_idx) or r[active_idx] is False:
+            continue
+        if isinstance(r[key_idx], str) and r[key_idx] and _ledger_blocks(r[key_idx], str(r[label_idx])):
+            r[active_idx] = False
+            deactivated += 1
+
     if added == 0 and deactivated == 0 and reactivated == 0:
         return 0
 
     doc = bejson_core_create_104a("ApiKey", list(_KEY_FIELDS), existing_rows)
-    if not bejson_core_atomic_write(str(keys_path), doc):
+    if not _keyfile_write(keys_path, doc):
         logger.error("[Engine_REST] Atomic write failed for %s", keys_path)
         return 0
 
@@ -1599,6 +1792,7 @@ def sync_keys_from_env_sources(
     """
     total_added = 0
     per_file_diagnostics: list[str] = []
+    _register_env_sources(newagent_env.resolve_env_bejson_sources(config))
     for src in newagent_env.resolve_env_bejson_sources(config):
         total_added += sync_keys_from_env_file(keys_path, src, key_prefix, diagnostics=per_file_diagnostics)
     detail = ""
@@ -1804,7 +1998,7 @@ def fetch_openrouter_free_models(api_key: Optional[str] = None, timeout: float =
     [{'id': str, 'name': str, 'description': str, 'context_length': int}]
     """
     url = "https://openrouter.ai/api/v1/models"
-    headers = {"User-Agent": "NewAgent/3.41.0"}
+    headers = {"User-Agent": "NewAgent"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 

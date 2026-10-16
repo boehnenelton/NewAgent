@@ -9,12 +9,12 @@ Description:    Offline job creation system for NewAgent's Job Creation System.
                 here are picked up by agent.py/webagent.py at startup
                 (lib_bejson_newagent_jobs.scan_jobs) and can be started
                 explicitly via /jobstart.
-Version:        1.0.0
+Version:        1.1.1
 Date:           2026-08-08
 Author:         Elton Boehnen — eltonboehnen@gmail.com
 Contact:        eltonboehnen@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
 Format_Creator: Elton Boehnen
-RELATIONAL_ID:  d4a1f8c2-9b3e-4d6a-8f0c-2e5b7a9c1d43
+RELATIONAL_ID:  8ccdaa75-50d4-4101-8646-595834ae7da1
 """
 
 import re
@@ -26,7 +26,7 @@ from pathlib import Path
 
 from flask import Flask, jsonify, request, Response
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 
 BASE_DIR = Path(__file__).resolve().parent
 JOBS_DIR = BASE_DIR / "jobs"
@@ -431,5 +431,5 @@ if __name__ == "__main__":
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     print(f"JobMaker v{VERSION} -- Elton Boehnen -- serving jobs/ at {JOBS_DIR}")
     print(f"[JobMaker] Auth token (send as X-Auth-Token header or ?token= param): {_web_token}")
-    print(f"[JobMaker] Listening on 127.0.0.1:5055 -- change host explicitly if you need this reachable beyond localhost, and understand what that exposes before you do.")
+    print("[JobMaker] Listening on 127.0.0.1:5055 -- change host explicitly if you need this reachable beyond localhost, and understand what that exposes before you do.")
     app.run(host="127.0.0.1", port=5055, debug=False)

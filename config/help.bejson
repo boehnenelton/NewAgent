@@ -1,0 +1,774 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "HelpEntry"
+  ],
+  "Fields": [
+    {
+      "name": "help_id",
+      "type": "string"
+    },
+    {
+      "name": "help_topic",
+      "type": "string"
+    },
+    {
+      "name": "help_kind",
+      "type": "string"
+    },
+    {
+      "name": "help_command",
+      "type": "string"
+    },
+    {
+      "name": "help_title",
+      "type": "string"
+    },
+    {
+      "name": "help_syntax",
+      "type": "string"
+    },
+    {
+      "name": "help_text",
+      "type": "string"
+    },
+    {
+      "name": "help_order",
+      "type": "integer"
+    }
+  ],
+  "Values": [
+    [
+      "general.topic.01",
+      "general",
+      "topic",
+      "",
+      "Basics",
+      "",
+      "Core commands: help, status, config, and leaving the session.",
+      10
+    ],
+    [
+      "general.command.01",
+      "general",
+      "command",
+      "/help",
+      "Show all commands by topic; /help <topic> or /help <command> for detail",
+      "/help [topic|command]",
+      "Lists every command grouped by topic.\n  /help <topic>    - one topic in full (models, keys, files, ...)\n  /help <command>  - usage for one command (with or without the slash)\n  /<command> help  - same as /help <command>\nHelp is read from config/help.bejson, so it can be edited without touching code.",
+      10
+    ],
+    [
+      "general.command.02",
+      "general",
+      "command",
+      "/about",
+      "Display version and author information",
+      "/about",
+      "",
+      20
+    ],
+    [
+      "general.command.03",
+      "general",
+      "command",
+      "/status",
+      "Show circuit-breaker state, uptime, active key, current model",
+      "/status",
+      "",
+      30
+    ],
+    [
+      "general.command.04",
+      "general",
+      "command",
+      "/stats",
+      "Display session statistics",
+      "/stats",
+      "",
+      40
+    ],
+    [
+      "general.command.05",
+      "general",
+      "command",
+      "/config",
+      "Display active ScriptConfig parameters",
+      "/config",
+      "",
+      50
+    ],
+    [
+      "general.command.06",
+      "general",
+      "command",
+      "/clear",
+      "Clear conversation history",
+      "/clear",
+      "",
+      60
+    ],
+    [
+      "general.command.07",
+      "general",
+      "command",
+      "/cls",
+      "Clear terminal screen",
+      "/cls",
+      "",
+      70
+    ],
+    [
+      "general.command.08",
+      "general",
+      "command",
+      "/exit",
+      "Exit and optionally archive named session",
+      "/exit",
+      "",
+      80
+    ],
+    [
+      "models.topic.01",
+      "models",
+      "topic",
+      "",
+      "Models & Engines",
+      "",
+      "The active model decides the provider. /model switches model (Gemini or OpenRouter); /engine picks the transport.",
+      20
+    ],
+    [
+      "models.command.01",
+      "models",
+      "command",
+      "/model",
+      "Show model catalog, switch model, or /model sync for free models",
+      "/model [num|id|sync]",
+      "Show the model catalog, switch active model, or sync free models.\n  /model               - List all available models (Gemini & OpenRouter)\n  /model sync          - Pull live 100% free models from OpenRouter into catalog\n  /model <num>         - Switch model by catalog number (e.g. /model 10)\n  /model <provider/id> - Switch to any OpenRouter model (e.g. meta-llama/llama-3.3-70b-instruct)\n  * Non-Gemini models automatically route through REST engine and use the OpenRouter key pool.",
+      10
+    ],
+    [
+      "models.command.02",
+      "models",
+      "command",
+      "/engine",
+      "Toggle between REST and Interactions engines",
+      "/engine",
+      "Toggle between the REST engine (standard API calls, used for Gemini & OpenRouter) and the Interactions engine (Gemini stateful interactions loop).\n  * Note: OpenRouter models require the REST engine and will auto-switch to REST if selected.",
+      20
+    ],
+    [
+      "models.command.03",
+      "models",
+      "command",
+      "/toolscope",
+      "Cycle interactions tool scope (all | shell_only)",
+      "/toolscope",
+      "",
+      30
+    ],
+    [
+      "models.command.04",
+      "models",
+      "command",
+      "/resumemode",
+      "Toggle Interactions resume strategy",
+      "/resumemode",
+      "",
+      40
+    ],
+    [
+      "models.note.01",
+      "models",
+      "note",
+      "",
+      "",
+      "",
+      "Provider follows the model: an OpenRouter model (provider/id) is routed through the REST engine and the OpenRouter key pool; Gemini models use the Gemini pool.",
+      10
+    ],
+    [
+      "models.note.02",
+      "models",
+      "note",
+      "",
+      "",
+      "",
+      "The Interactions engine is Gemini-only. /engine refuses to switch to it while an OpenRouter model is active, and picking an OpenRouter model while on Interactions auto-switches back to REST.",
+      20
+    ],
+    [
+      "models.note.03",
+      "models",
+      "note",
+      "",
+      "",
+      "",
+      "/model sync adds the live 100% free OpenRouter models to the catalog and numbers them so /model <num> can select them.",
+      30
+    ],
+    [
+      "models.example.01",
+      "models",
+      "example",
+      "",
+      "",
+      "",
+      "/model            list the catalog",
+      10
+    ],
+    [
+      "models.example.02",
+      "models",
+      "example",
+      "",
+      "",
+      "",
+      "/model sync       pull free OpenRouter models",
+      20
+    ],
+    [
+      "models.example.03",
+      "models",
+      "example",
+      "",
+      "",
+      "",
+      "/model 10         switch by catalog number",
+      30
+    ],
+    [
+      "models.example.04",
+      "models",
+      "example",
+      "",
+      "",
+      "",
+      "/model meta-llama/llama-3.3-70b-instruct",
+      40
+    ],
+    [
+      "models.example.05",
+      "models",
+      "example",
+      "",
+      "",
+      "",
+      "/engine           toggle REST / Interactions",
+      50
+    ],
+    [
+      "keys.topic.01",
+      "keys",
+      "topic",
+      "",
+      "API Keys",
+      "",
+      "Inspect, flag and deactivate the keys in the Gemini and OpenRouter pools.",
+      30
+    ],
+    [
+      "keys.command.01",
+      "keys",
+      "command",
+      "/keys",
+      "API Keys manager (list/flag/deactivate/ledger)",
+      "/keys [subcommand]",
+      "Manage your API keys.\n  /keys                - View API keys status and call counts.\n  /keys deactivate <hash> - Permanently deactivate a key.\n  /keys flag <hash> <flag> [note] - Flag a key (e.g. leaked, paid).\n  /keys unflag <hash> <flag> - Remove a flag.\n  /keys ledger         - View full persistent key ledger.",
+      10
+    ],
+    [
+      "keys.note.01",
+      "keys",
+      "note",
+      "",
+      "",
+      "",
+      "Keys are loaded from your secure env file (GEMINI_KEY_*, OPENROUTER_KEY_*) into per-provider registries under config/.",
+      10
+    ],
+    [
+      "keys.note.02",
+      "keys",
+      "note",
+      "",
+      "",
+      "",
+      "A key flagged bad, revoked or leaked stays out of rotation even if it is still in the env file; un-flag it explicitly with /keys unflag.",
+      20
+    ],
+    [
+      "keys.note.03",
+      "keys",
+      "note",
+      "",
+      "",
+      "",
+      "Key commands take a key hash (shown by /keys), never the raw key.",
+      30
+    ],
+    [
+      "keys.example.01",
+      "keys",
+      "example",
+      "",
+      "",
+      "",
+      "/keys                     status and call counts",
+      10
+    ],
+    [
+      "keys.example.02",
+      "keys",
+      "example",
+      "",
+      "",
+      "",
+      "/keys ledger              full persistent ledger",
+      20
+    ],
+    [
+      "keys.example.03",
+      "keys",
+      "example",
+      "",
+      "",
+      "",
+      "/keys flag <hash> leaked  flag a key",
+      30
+    ],
+    [
+      "files.topic.01",
+      "files",
+      "topic",
+      "",
+      "Files & Rollback",
+      "",
+      "Working directory, automatic backups, and named rollback checkpoints.",
+      40
+    ],
+    [
+      "files.command.01",
+      "files",
+      "command",
+      "/cd",
+      "Change active working directory immediately",
+      "/cd <path>",
+      "Change the agent's active working directory immediately. (Alias: /goto)",
+      10
+    ],
+    [
+      "files.command.02",
+      "files",
+      "command",
+      "/goto",
+      "Alias for /cd",
+      "/goto <path>",
+      "Alias for /cd. Change the agent's active working directory immediately.",
+      20
+    ],
+    [
+      "files.command.03",
+      "files",
+      "command",
+      "/backups",
+      "List unexpired backups in backup_log.bejson",
+      "/backups",
+      "",
+      30
+    ],
+    [
+      "files.command.04",
+      "files",
+      "command",
+      "/restore",
+      "Restore a file to its backed-up snapshot",
+      "/restore <id>",
+      "Restore a file to its backed-up snapshot using the ID from /backups.",
+      40
+    ],
+    [
+      "files.command.05",
+      "files",
+      "command",
+      "/checkpoints",
+      "List saved named rollback checkpoints",
+      "/checkpoints",
+      "",
+      50
+    ],
+    [
+      "files.command.06",
+      "files",
+      "command",
+      "/rollback",
+      "Rollback all files in checkpoint to prior state",
+      "/rollback <lbl>",
+      "Rollback all files in a named checkpoint to their prior state.",
+      60
+    ],
+    [
+      "files.note.01",
+      "files",
+      "note",
+      "",
+      "",
+      "",
+      "Backups expire; /backups lists only the unexpired ones.",
+      10
+    ],
+    [
+      "files.note.02",
+      "files",
+      "note",
+      "",
+      "",
+      "",
+      "/cd and /goto change the agent's working directory immediately, relative to its current directory.",
+      20
+    ],
+    [
+      "files.example.01",
+      "files",
+      "example",
+      "",
+      "",
+      "",
+      "/backups",
+      10
+    ],
+    [
+      "files.example.02",
+      "files",
+      "example",
+      "",
+      "",
+      "",
+      "/restore <id>",
+      20
+    ],
+    [
+      "files.example.03",
+      "files",
+      "example",
+      "",
+      "",
+      "",
+      "/rollback <label>",
+      30
+    ],
+    [
+      "session.topic.01",
+      "session",
+      "topic",
+      "",
+      "Session & History",
+      "",
+      "Review, export and convert the current or archived sessions.",
+      50
+    ],
+    [
+      "session.command.01",
+      "session",
+      "command",
+      "/history",
+      "Print full scrollable history with role badges",
+      "/history",
+      "",
+      10
+    ],
+    [
+      "session.command.02",
+      "session",
+      "command",
+      "/export",
+      "Export full conversation to Markdown file",
+      "/export [path]",
+      "Export the full conversation history to a Markdown file. If path is omitted, exports to current directory.",
+      20
+    ],
+    [
+      "session.command.03",
+      "session",
+      "command",
+      "/sessions",
+      "List archived sessions",
+      "/sessions",
+      "",
+      30
+    ],
+    [
+      "session.command.04",
+      "session",
+      "command",
+      "/logs2md",
+      "Convert a session log to Markdown + a timestamped zip",
+      "/logs2md [path]",
+      "Convert a session log to Markdown and zip it with a timestamp. No arg = current session.",
+      40
+    ],
+    [
+      "session.example.01",
+      "session",
+      "example",
+      "",
+      "",
+      "",
+      "/export",
+      10
+    ],
+    [
+      "session.example.02",
+      "session",
+      "example",
+      "",
+      "",
+      "",
+      "/export notes/today.md",
+      20
+    ],
+    [
+      "session.example.03",
+      "session",
+      "example",
+      "",
+      "",
+      "",
+      "/logs2md",
+      30
+    ],
+    [
+      "context.topic.01",
+      "context",
+      "topic",
+      "",
+      "Context & Memory",
+      "",
+      "What the model sees each turn: the context bubble, its budget, compression, and memory reset/recall.",
+      60
+    ],
+    [
+      "context.command.01",
+      "context",
+      "command",
+      "/ctxlog",
+      "View the context bubble sent with a past turn (Context Button)",
+      "/ctxlog [n]",
+      "View the context bubble sent with a past turn. Default is the most recent turn.",
+      10
+    ],
+    [
+      "context.command.02",
+      "context",
+      "command",
+      "/budget",
+      "View or set context budget (max tokens, category percentages)",
+      "/budget [name val]",
+      "View or set context budget limits (e.g., max tokens, category percentages).",
+      20
+    ],
+    [
+      "context.command.03",
+      "context",
+      "command",
+      "/observer",
+      "Toggle Part 4 context compression on/off",
+      "/observer",
+      "",
+      30
+    ],
+    [
+      "context.command.04",
+      "context",
+      "command",
+      "/init",
+      "Scaffold an empty context.bejson in the current directory",
+      "/init",
+      "",
+      40
+    ],
+    [
+      "context.command.05",
+      "context",
+      "command",
+      "/amnesia",
+      "Force-compress the live session history to a recap, then wipe agent memory",
+      "/amnesia",
+      "Force-compress the live session history to a recap, then wipe agent memory. On-disk logs are untouched. Auto-feeds recap back in unless auto_amnesia_memory_retrieval is off.",
+      50
+    ],
+    [
+      "context.command.06",
+      "context",
+      "command",
+      "/rebirth",
+      "Retrieve the last /amnesia recap and feed it back into memory",
+      "/rebirth",
+      "",
+      60
+    ],
+    [
+      "context.note.01",
+      "context",
+      "note",
+      "",
+      "",
+      "",
+      "/amnesia wipes live agent memory but leaves on-disk logs untouched; /rebirth feeds the last recap back in.",
+      10
+    ],
+    [
+      "input.topic.01",
+      "input",
+      "topic",
+      "",
+      "Input & Display",
+      "",
+      "How you talk to the agent and how output is shown.",
+      70
+    ],
+    [
+      "input.command.01",
+      "input",
+      "command",
+      "/ml",
+      "Toggle multi-line input mode",
+      "/ml",
+      "",
+      10
+    ],
+    [
+      "input.command.02",
+      "input",
+      "command",
+      "/spk",
+      "Cycle input mode: 0 (typed) -> 1 (STT) -> 2 (dialog) -> 0",
+      "/spk",
+      "",
+      20
+    ],
+    [
+      "input.command.03",
+      "input",
+      "command",
+      "/snip",
+      "Snippet manager (add/del/list/off)",
+      "/snip [cmd]",
+      "Manage reusable snippets.\n  /snip list       - List all active snippets.\n  /snip add <lbl>|<txt> - Add a new snippet.\n  /snip del <id>   - Delete a snippet.\n  /snip off <id>   - Disable a snippet temporarily.",
+      30
+    ],
+    [
+      "input.command.04",
+      "input",
+      "command",
+      "/feed",
+      "Toggle live subprocess stdout/stderr streaming",
+      "/feed",
+      "",
+      40
+    ],
+    [
+      "input.command.05",
+      "input",
+      "command",
+      "/speak",
+      "Toggle printing of TTS output",
+      "/speak",
+      "",
+      50
+    ],
+    [
+      "input.command.06",
+      "input",
+      "command",
+      "/ac",
+      "Toggle auto-continue after action execution",
+      "/ac",
+      "",
+      60
+    ],
+    [
+      "safety.topic.01",
+      "safety",
+      "topic",
+      "",
+      "Safety & Debugging",
+      "",
+      "Guard rails for risky actions, and raw API dumps for troubleshooting.",
+      80
+    ],
+    [
+      "safety.command.01",
+      "safety",
+      "command",
+      "/dryrun",
+      "Toggle dry-run mode (actions are simulated)",
+      "/dryrun",
+      "",
+      10
+    ],
+    [
+      "safety.command.02",
+      "safety",
+      "command",
+      "/gate",
+      "Toggle confirmation gate for risky actions",
+      "/gate",
+      "",
+      20
+    ],
+    [
+      "safety.command.03",
+      "safety",
+      "command",
+      "/debug",
+      "Toggle debug_mode (dump raw API request/response pairs)",
+      "/debug",
+      "",
+      30
+    ],
+    [
+      "safety.note.01",
+      "safety",
+      "note",
+      "",
+      "",
+      "",
+      "/gate asks Y/n before exec and delete actions; /dryrun simulates actions without running them.",
+      10
+    ],
+    [
+      "jobs.topic.01",
+      "jobs",
+      "topic",
+      "",
+      "Jobs",
+      "",
+      "Pending job schemas in jobs/ and starting one.",
+      90
+    ],
+    [
+      "jobs.command.01",
+      "jobs",
+      "command",
+      "/jobs",
+      "List pending jobs in jobs/ and show the currently active one",
+      "/jobs",
+      "",
+      10
+    ],
+    [
+      "jobs.command.02",
+      "jobs",
+      "command",
+      "/jobstart",
+      "Start a job (injects its goal+tasks into the system prompt)",
+      "/jobstart <name>",
+      "Start a job from the jobs/ folder. Injects its goal and tasks into the system prompt.",
+      20
+    ]
+  ]
+}

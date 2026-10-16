@@ -20,7 +20,7 @@
 **GitHub:** [github.com/boehnenelton](https://github.com/boehnenelton)  
 **Format Creator & Ecosystem Maintainer:** Elton Boehnen  
 **Document Fingerprint / Relational ID:** `a84c9f12-0012-4f81-9b04-3e911284a105`  
-**Package Release Version:** v3.23.0 / Package PKG 077  
+**Package Release Version:** v3.43.0 / Package PKG 127  
 
 ---
 
@@ -533,8 +533,8 @@ MFDB federates multiple BEJSON entity files using a root manifest file (`bejson_
   "Project_Name": "NewAgent",
   "Project_GUID": "GUID_PLACEHOLDER",
   "Versioned_UUID": "a84c9f12-0012-4f81-9b04-3e911284a105",
-  "Release_Version": "3.23.0",
-  "Package_Version": 77,
+  "Release_Version": "3.43.0",
+  "Package_Version": 127,
   "Primary_Key": "project_uuid",
   "Parent_Hierarchy": ["Storage_Root", "Workspace", "Domain", "Repository"],
   "Entities": [

@@ -3,12 +3,16 @@ Name:         agent.py
 Family:       NewAgent
 Description:  Lean orchestrator and async main event loop dispatcher.
               Switches dynamically between REST and Interactions engines.
-Version:      2.21.0
-Date:         2026-10-14
+Version:      2.22.0
+Date:         2026-10-16
 Author:       Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID: 9c2b48a1-ff89-4e78-bc4a-965a25e9821d
+RELATIONAL_ID: 4f7c6e01-de8c-4be9-8b20-565d7801630d
 
 CHANGELOG:
+- 2.22.0 (2026-10-16): Auto-continue guard. Auto-continue had no exit besides a tag-free model reply, so
+  models that always end a turn with <exec> (nemotron-3-super: `echo "Task completed"` x6) looped
+  until the network dropped. Now stops on echo-only batches, identical repeated batches, or
+  max_auto_continue_turns (default 12) consecutive auto-continues; control returns to the user.
 - 2.21.0 (2026-10-14): Added provider routing safety check to turn execution loop,
   ensuring non-Gemini models route via REST engine even if engine_mode is set to interactions.
 - 2.20.0 (2026-10-10): Integrated OpenRouter routing capability into engine_rest.py and 
@@ -104,7 +108,7 @@ import lib_bejson_newagent_jobs as jobs
 import lib_bejson_newagent_env as newagent_env
 import lib_bejson_newagent_subagent_sessions as subagent_sessions
 
-VERSION = "2.21.0"
+VERSION = "2.22.0"
 
 # Directories configuration
 BASE_DIR = Path(__file__).resolve().parent
@@ -403,6 +407,10 @@ async def main() -> None:
         autonomy_active = False
         autonomy_turns_remaining = 0
         auto_continuing = False
+        # pkg128 loop guard state (see 'Auto-continue guard' below)
+        auto_continue_streak = 0
+        last_action_sig = None
+        repeat_action_count = 0
         # Circuit breaker (audit Part 1/I): 3 consecutive failed turns triggers a
         # clean shutdown instead of looping indefinitely against a broken state.
 
@@ -461,6 +469,9 @@ async def main() -> None:
                 ts = datetime.now().strftime("%H:%M:%S")
                 history.append({"role": "user", "content": user_msg, "_ts": ts})
                 logger.log("user", user_msg)
+                auto_continue_streak = 0
+                last_action_sig = None
+                repeat_action_count = 0
             else:
                 # Under autonomy, we construct automatic payload
                 if auto_continuing:
@@ -713,6 +724,42 @@ async def main() -> None:
                     # Set auto continue
                     if config.get("auto_continue_enabled", True):
                         auto_continuing = True
+
+                    # Auto-continue guard (pkg128). Auto-continue previously had
+                    # NO exit other than the model emitting a tag-free reply:
+                    # max_autonomy_turns only counts /autonomy runs, so a model
+                    # that always ends with an <exec> (OpenRouter nemotron-3-super
+                    # looped `echo "Task completed"` 6x, 18:25-18:27 in
+                    # session_2026-10-15_18-17-06) re-prompted itself forever.
+                    # Hand control back to the user when (a) the batch is only
+                    # echo announcements, (b) the identical batch repeats, or
+                    # (c) the consecutive auto-continue cap is hit.
+                    if auto_continuing:
+                        auto_continue_streak += 1
+                        this_sig = actions.actions_signature(parsed_actions)
+                        repeat_action_count = (
+                            repeat_action_count + 1 if this_sig == last_action_sig else 0
+                        )
+                        last_action_sig = this_sig
+                        loop_stop_reason = None
+                        max_streak = int(config.get("max_auto_continue_turns", 12) or 0)
+                        if actions.is_announcement_only(parsed_actions):
+                            loop_stop_reason = "model only echoed a status message (nothing left to do)"
+                        elif repeat_action_count >= 1:
+                            loop_stop_reason = "model repeated the identical action batch"
+                        elif max_streak > 0 and auto_continue_streak >= max_streak:
+                            loop_stop_reason = f"reached max_auto_continue_turns ({max_streak})"
+                        if loop_stop_reason:
+                            auto_continuing = False
+                            logger.log("system", f"[AUTO-CONTINUE STOPPED] {loop_stop_reason}")
+                            tui.refresh_ui(
+                                history=history, exec_results=exec_results, stats=stats,
+                                cwd=ctx["_cwd"], input_mode=config.get("input_mode", 0),
+                                dryrun=config.get("dryrun_mode", False),
+                                context_bloat=ctx.get("_context_bloat", False),
+                                status=f"Auto-continue stopped: {loop_stop_reason}. Awaiting input.",
+                                agent_version=VERSION,
+                            )
             else:
                 turn_actions = exec_results[-len(call_log):] if 'call_log' in locals() and call_log else []
 

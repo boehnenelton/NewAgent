@@ -91,9 +91,19 @@
       "Max consecutive autonomous turns (0=unlimited)"
     ],
     [
+      "max_auto_continue_turns",
+      "12",
+      "Max consecutive auto-continued turns (action results fed back to the model) before control returns to the user (0=unlimited). Loop guard added pkg128."
+    ],
+    [
       "exec_timeout_seconds",
       "60",
-      "Max seconds per shell command"
+      "Max seconds per shell command. Long jobs (npm install, builds, downloads) are killed at this limit -- run them with <exec_bg> instead of raising it."
+    ],
+    [
+      "exec_output_cap_bytes",
+      "65536",
+      "Max bytes of stdout / stderr kept per shell command (0 = uncapped). Excess is truncated with a notice."
     ],
     [
       "exec_denylist",
