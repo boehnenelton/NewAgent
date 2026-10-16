@@ -9,7 +9,7 @@
 [![Architecture](https://img.shields.io/badge/Architecture-Dual%20Engine%20%28REST%20%2B%20Interactions%29-blueviolet.svg)]()
 [![Persistence](https://img.shields.io/badge/Persistence-BEJSON%20104a%20%7C%20MFDB%20v1.40-orange.svg)]()
 [![Runtime](https://img.shields.io/badge/Runtime-Python%203.10%2B%20%7C%20Termux%20%7C%20Linux-informational.svg)]()
-[![License](https://img.shields.io/badge/License-Polyglot%20%28MIT%2FApache%2FCC--BY%2FCC0%29-red.svg)]()
+[![License](https://img.shields.io/badge/License-Non--Commercial%20%28PolyForm%20NC%201.0.0%29-red.svg)](LICENSE)
 
 ---
 
@@ -50,7 +50,7 @@
 - [Installation & Environment Setup](#installation--environment-setup)
 - [Automated Verification & Test Harness](#automated-verification--test-harness)
 - [Troubleshooting & Diagnostic Guide](#troubleshooting--diagnostic-guide)
-- [Polyglot License](#polyglot-license)
+- [Non-Commercial License](#non-commercial-license)
 
 ---
 
@@ -546,13 +546,14 @@ pytest tests/ -v
 
 ---
 
-## Polyglot License
+## Non-Commercial License
 
-This repository is distributed under a **Polyglot Open-Source License Model** to maximize interoperability across programming runtimes, technical documentation channels, and local-first data specifications:
+This repository, all associated source code, modules, documentation, and standalone utilities are distributed strictly under the **PolyForm Noncommercial License 1.0.0** for non-commercial purposes only:
 
-- **Source Code & Core Agent Logic (Python, JavaScript, Bash):** Dual-licensed under the [MIT License](LICENSE) and [Apache 2.0 License](LICENSE-APACHE). Users may choose either license at their option.
-- **Documentation & Technical Reports:** Licensed under [Creative Commons Attribution 4.0 International (CC-BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
-- **BEJSON & MFDB Format Specifications:** Placed in the [Public Domain (CC0 1.0 Universal)](https://creativecommons.org/publicdomain/zero/1.0/) for unrestricted ecosystem adoption and zero-lock-in integration.
+- **Noncommercial Purpose Only:** Permission is granted to use, modify, and distribute the Software solely for non-commercial purposes (personal exploration, educational study, private research).
+- **Commercial Restrictions:** Any commercial use, including selling, licensing, renting, embedding inside proprietary commercial applications or SaaS platforms, hosting as a paid service, or using the Software for commercial operations, is **strictly prohibited**.
+- **Commercial Licensing Inquiries:** For commercial licensing agreements, enterprise deployment rights, or commercial partnerships, contact Elton Boehnen directly at [boehnenelton2024@gmail.com](mailto:boehnenelton2024@gmail.com).
+- **Full License Text:** See the complete license terms in [`LICENSE`](LICENSE).
 
 **Maintainer & Copyright:**  
 © 2026 Elton Boehnen · [boehnenelton2024@gmail.com](mailto:boehnenelton2024@gmail.com) · [boehnenelton2024.pages.dev](https://boehnenelton2024.pages.dev) · [github.com/boehnenelton](https://github.com/boehnenelton)
