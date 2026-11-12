@@ -1,0 +1,54 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "ScriptConfig"
+  ],
+  "Fields": [
+    {
+      "name": "setting_name",
+      "type": "string"
+    },
+    {
+      "name": "setting_value",
+      "type": "string"
+    },
+    {
+      "name": "description",
+      "type": "string"
+    }
+  ],
+  "Values": [
+    [
+      "json_output_default",
+      "false",
+      "Default to --json output even when the flag isn't passed"
+    ],
+    [
+      "execute_default",
+      "false",
+      "Default to --execute (auto-run XML tool actions) even when the flag isn't passed"
+    ],
+    [
+      "include_persistent_policy",
+      "true",
+      "Prepend Context/CLIAgent_Persistent_Policy.md to every call's system instruction unless --no-context is passed"
+    ],
+    [
+      "log_invocations",
+      "true",
+      "Append a one-line record of every call to logs/cliagent_invocations.md"
+    ],
+    [
+      "cli_max_retries",
+      "3",
+      "REST engine max_retries for cliagent calls specifically"
+    ],
+    [
+      "cli_timeout_seconds",
+      "90",
+      "REST engine per-request timeout (seconds) for cliagent calls specifically"
+    ]
+  ]
+}

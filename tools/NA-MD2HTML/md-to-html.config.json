@@ -12,6 +12,10 @@
     ["output_folder_name", "MD_TO_HTML",
      "Name of the output folder created for converted files."],
     ["default_description", "Document converted from Markdown.",
-     "Fallback SEO meta description when none can be extracted from the document."]
+     "Fallback SEO meta description when none can be extracted from the document."],
+    ["shared_lib_directory", "../../lib",
+     "Relative path to NewAgent shared Core BEJSON libraries."],
+    ["lib_extensions_directory", "../../lib_extensions",
+     "Relative path to NewAgent extension libraries."]
   ]
 }

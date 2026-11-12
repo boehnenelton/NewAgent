@@ -1,6 +1,13 @@
 """
 Library:        lib_bejson_newagent_subagent_profiles.py
 Family:         NewAgent (subagent family)
+Version:        1.1.0
+Date:           2026-09-29
+Author:         Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
+Contact:        boehnenelton2024@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
+Format_Creator: Elton Boehnen
+RELATIONAL_ID:  dcf3f09e-9597-48cd-bbe3-820ae728b1da
+Release_Version: 300
 Description:    Sub-agent profile registry -- one BEJSON 104 file per
                 profile under subagents/profiles/<name>.bejson, each
                 describing a role a dispatched sub-agent can run as
@@ -30,12 +37,6 @@ Description:    Sub-agent profile registry -- one BEJSON 104 file per
                 always dispatches a sub-agent BY a caller-supplied profile
                 name (see subagent_runtime.dispatch_subagent), so there is
                 no single global "active" one to track.
-Version:        1.1.0
-Date:           2026-09-29
-Author:         Elton Boehnen — eltonboehnen@gmail.com
-Contact:        eltonboehnen@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
-Format_Creator: Elton Boehnen
-RELATIONAL_ID:  dcf3f09e-9597-48cd-bbe3-820ae728b1da
 
 CHANGELOG:
 - 1.1.0 (2026-09-29): Remediation pass, audit finding #7 (sub-agent
@@ -63,6 +64,8 @@ from lib_bejson_Core_bejson_core import (
     bejson_core_create_104,
 )
 from lib_bejson_newagent_subagent_common import profiles_dir, row_to_dict
+
+RELATIONAL_ID = "dcf3f09e-9597-48cd-bbe3-820ae728b1da"
 
 VERSION = "1.1.0"
 

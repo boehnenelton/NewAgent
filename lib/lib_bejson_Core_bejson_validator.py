@@ -7,12 +7,12 @@ Format_Scope:    104 | 104a | 104db (generic)
 Glossary:        BEJSON 104, 104a and 104db are the three file formats (Format_Version). 104db = ONE file holding 2+ entity types
                  (Record_Type_Parent discriminator, null-padding). MFDB is NOT a format and NOT 104db: it is a layer made of one 104a manifest
                  (104a.mfdb.bejson) plus dense 104 entity files linked by Parent_Hierarchy. MFDB-132 = an MFDB packed into one Chunked-104a document.
-Version:         2.2.6
+Version:         2.2.7
 Release_Version: 300
-Date:            2026-10-06
+Date:            2026-10-16
 Author:          Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
 Format_Creator:  Elton Boehnen
-RELATIONAL_ID:   0a120d99-6074-4774-96ae-feb6f7beba27
+RELATIONAL_ID:   21d67eaf-89ea-4f3e-b5fb-0c2e9395dd4a
 """
 
 import json
@@ -42,6 +42,7 @@ except ImportError as e:
 VALID_VERSIONS = {"104", "104a", "104db"}
 VALID_FIELD_TYPES = {"string", "integer", "number", "boolean", "array", "object"}
 MANDATORY_KEYS = ("Format", "Format_Version", "Format_Creator", "Records_Type", "Fields", "Values")
+IN_MEMORY_ONLY_KEYS = frozenset({"_nesting_field_map"})  # other in-memory caches (never persisted)
 FIELD_MAP_CACHE_KEY = "_bejson_field_map"  # in-memory only; legitimate on dict input, forbidden in files/strings
 
 @dataclass
@@ -198,10 +199,15 @@ def bejson_validator_check_field_map_cache(doc, persisted):
         raise BEJSONValidationError(f"In-memory '{FIELD_MAP_CACHE_KEY}' does not match Fields (stale or forged)", E_RESERVED_KEY_COLLISION)
 
 # Step 7: custom top-level keys (the reserved in-memory key _bejson_field_map is skipped here and handled by check_field_map_cache). 104 and 104db forbid them (only the six mandatory keys plus Parent_Hierarchy are allowed). 104a allows custom headers (file-level metadata, PascalCase recommended). MFDB manifests use this 104a allowance for MFDB_Version, DB_Name, etc.
-def bejson_validator_check_custom_headers(doc, version):
+def bejson_validator_check_custom_headers(doc, version, persisted=True):
     mandatory_set = set(MANDATORY_KEYS)
     for key in doc:
         if key in mandatory_set or key == "Parent_Hierarchy" or key == FIELD_MAP_CACHE_KEY: continue
+        # '_' prefix is reserved for in-memory caches: persisted input never carries one; in-memory input only the known ones.
+        if isinstance(key, str) and key.startswith("_"):
+            if persisted or key not in IN_MEMORY_ONLY_KEYS:
+                raise BEJSONValidationError(f"Reserved key collision: '{key}' uses the reserved '_' prefix", E_RESERVED_KEY_COLLISION)
+            continue
         if version in ("104", "104db"):
             raise BEJSONValidationError(f"Custom key '{key}' forbidden in {version}", E_RESERVED_KEY_COLLISION)
         # 104a: Custom headers allowed, no strict PascalCase enforcement
@@ -217,7 +223,7 @@ def validate_bejson(input_data: Union[str, dict], is_file: bool = False) -> Vali
         doc = bejson_validator_check_json_syntax(input_data, res, is_file=is_file)
         version = bejson_validator_check_mandatory_keys(doc)
         persisted = is_file or not isinstance(input_data, dict)
-        bejson_validator_check_custom_headers(doc, version)
+        bejson_validator_check_custom_headers(doc, version, persisted)
         bejson_validator_check_records_type(doc, version)
         bejson_validator_check_record_type_parent(doc, version)
         fields_count = bejson_validator_check_fields_structure(doc, version)

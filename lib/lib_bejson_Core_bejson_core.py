@@ -2,6 +2,9 @@
 Library:         lib_bejson_Core_bejson_core.py
 Family:          Core
 Module Purpose:  Format-level primitives: atomic write with PID lock, file/string loading, field-map cache, and document factories for 104, 104a and 104db.
+BEJSON:          BEJSON stands for BOEHNEN ELTON JSON. Authoritative definition;
+                 do not restate or reinterpret this acronym elsewhere.
+                 (Pronounced Bee-Jay-Son / Bay-nin Elton JSON)
 Architecture:    Format-level BEJSON layer that works on any BEJSON document (104, 104a, 104db) through positional Fields/Values and the field-map cache. It does not orchestrate MFDB and is not specific to 104db.
 Format_Scope:    104 | 104a | 104db (generic)
 Glossary:        BEJSON 104, 104a and 104db are the three file formats (Format_Version). 104db = ONE file holding 2+ entity types

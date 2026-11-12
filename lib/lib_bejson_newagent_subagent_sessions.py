@@ -1,6 +1,13 @@
 """
 Library:        lib_bejson_newagent_subagent_sessions.py
 Family:         NewAgent (subagent family)
+Version:        1.2.0
+Date:           2026-09-29
+Author:         Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
+Contact:        boehnenelton2024@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
+Format_Creator: Elton Boehnen
+RELATIONAL_ID:  cd3ba553-b938-40ab-8cbb-aea860e9708d
+Release_Version: 300
 Description:    Durable sub-agent session state -- one BEJSON 104 table
                 (subagents/sessions.bejson) holding every sub-agent
                 session ever dispatched: which profile it's running as,
@@ -39,12 +46,6 @@ Description:    Durable sub-agent session state -- one BEJSON 104 table
                 arbitrary and the runtime doesn't dictate a fixed state
                 machine -- only "status" is a closed set the runtime
                 itself depends on (see STATUS_* constants).
-Version:        1.2.0
-Date:           2026-09-29
-Author:         Elton Boehnen — eltonboehnen@gmail.com
-Contact:        eltonboehnen@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
-Format_Creator: Elton Boehnen
-RELATIONAL_ID:  cd3ba553-b938-40ab-8cbb-aea860e9708d
 
 CHANGELOG:
 - 1.2.0 (2026-10-13): Added cleanup_old_sessions() -- 3-day auto-prune of
@@ -283,7 +284,6 @@ def cleanup_old_sessions(subagents_dir: Path, max_age_days: float = 3) -> dict:
     any consumed signal older than the cutoff, and loose files under
     subagents/logs/ older than the cutoff. ACTIVE/BUSY/WAITING_SIGNAL
     sessions are never removed. Returns counts. Never raises."""
-    import time
     from lib_bejson_newagent_subagent_common import signals_path
     cutoff = datetime.now(timezone.utc).timestamp() - max_age_days * 86400
     stats = {"sessions": 0, "signals": 0, "files": 0}

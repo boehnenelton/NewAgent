@@ -611,6 +611,16 @@
       60
     ],
     [
+      "context.command.07",
+      "context",
+      "command",
+      "/geminimd",
+      "Inspect or toggle config-gated GEMINI.md global + tree-walking persistent policy",
+      "/geminimd [on|off|status]",
+      "Manages config-gated GEMINI.md / AGENTS.md persistent policy support (gemini_md_policy_enabled in config/config.json):\n  /geminimd         - show enabled/disabled status and active global + root-to-CWD policy chain\n  /geminimd on|off  - toggle gemini_md_policy_enabled (true/false) and persist to config/config.json",
+      70
+    ],
+    [
       "context.note.01",
       "context",
       "note",
@@ -768,6 +778,36 @@
       "Start a job (injects its goal+tasks into the system prompt)",
       "/jobstart <name>",
       "Start a job from the jobs/ folder. Injects its goal and tasks into the system prompt.",
+      20
+    ],
+    [
+      "skills.topic.01",
+      "skills",
+      "topic",
+      "",
+      "Antigravity (agy) Skills",
+      "",
+      "Config-gated compatibility layer for Antigravity (agy) SKILL.md bundles.",
+      95
+    ],
+    [
+      "skills.command.01",
+      "skills",
+      "command",
+      "/skills",
+      "Inspect or toggle the config-gated Antigravity (agy) skills layer",
+      "/skills [on|off|list [filter]|info <name>]",
+      "Manages the Antigravity (agy) skills compatibility layer (gated by agy_skills_enabled in config/config.json):\n  /skills               - show current enabled/disabled status and discovered skills\n  /skills on | off      - toggle agy_skills_enabled (true/false) and persist to config/config.json\n  /skills list [query]  - list discovered SKILL.md bundles matching optional keyword\n  /skills info <name>   - read full SKILL.md instructions and bundled scripts for a skill",
+      10
+    ],
+    [
+      "skills.command.02",
+      "skills",
+      "command",
+      "/cfgmenu",
+      "57-Column BEJSON Positional Telemetry hierarchical configuration manager",
+      "/cfgmenu [1-7|ENG|AUT|MEM|EXT|SYS|BUB|CLI|get <k>|set <k> <v>|toggle <k>|validate|probe]",
+      "Renders and mutates all 67 configuration options across 7 categories (ENG, AUT, MEM, EXT, SYS, BUB, CLI) in strict 57-column BEJSON Positional Telemetry format.",
       20
     ]
   ]

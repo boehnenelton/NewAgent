@@ -25,15 +25,40 @@ CHANGELOG:
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 SCRIPT_PATH = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_PATH.parent.parent / "lib"))
+CONFIG_FILE_PATH = SCRIPT_PATH / "config" / "config.json"
+
+def _bootstrap_init_library_paths() -> None:
+    shared_lib_rel = "../../lib"
+    ext_lib_rel = "../../lib_extensions"
+    if CONFIG_FILE_PATH.exists():
+        try:
+            config_doc = json.loads(CONFIG_FILE_PATH.read_text(encoding="utf-8"))
+            field_map = {f["name"]: idx for idx, f in enumerate(config_doc.get("Fields", []))}
+            name_idx = field_map.get("setting_name", 0)
+            val_idx = field_map.get("setting_value", 1)
+            for row in config_doc.get("Values", []):
+                if len(row) > max(name_idx, val_idx):
+                    if row[name_idx] == "shared_lib_directory":
+                        shared_lib_rel = str(row[val_idx])
+                    elif row[name_idx] == "lib_extensions_directory":
+                        ext_lib_rel = str(row[val_idx])
+        except Exception:
+            pass
+    for rel_dir in (shared_lib_rel, ext_lib_rel):
+        resolved_dir = (SCRIPT_PATH / rel_dir).resolve()
+        if resolved_dir.is_dir() and str(resolved_dir) not in sys.path:
+            sys.path.insert(0, str(resolved_dir))
+
+_bootstrap_init_library_paths()
 
 import lib_bejson_newagent_context_bubble as bubble
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 def main() -> int:

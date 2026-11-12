@@ -22,14 +22,33 @@ Description:    Provider-agnostic AI constants and configuration manager.
                 NOTE: This module deliberately does NOT import any provider
                 library.  It only depends on the BEJSON Core family.
 
-Version:        1.1.0
-Date:           2026-08-12
+Version:        1.2.1
+Date:           2026-09-21
 Author:         Elton Boehnen
 Contact:        boehnenelton2024@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
 RELATIONAL_ID:  a1f2e3d4-b5c6-7890-abcd-ef1234567890
 Release_Version: 300
 
 Changelog:
+  1.2.1 (2026-09-21) -- Added pct_staged_chunk (default 0.15) backing the
+        chat client's Attach-tab Save button (see context_chunker.py).
+        Nominal pct total is now 1.30 -- see the 1.2.0 note below, same
+        trade-off, compounding.
+  1.2.0 (2026-09-21) -- Added pct_imported_files (default 0.15) backing
+        the chat client's new file-import-list-with-checkboxes feature
+        (see lib_bejson_AI_ai_context_files.py). NOTE: the six original
+        pct_* slots already summed to exactly 1.00 (0.20+0.20+0.30+0.15+
+        0.10+0.05), which this file's own header comment says is the
+        ceiling ("must sum <= 1.0"). Adding a 7th slot at 0.15 without
+        reducing any existing one pushes the nominal total to 1.15.
+        Flagging rather than silently rebalancing Elton's already-tuned
+        percentages -- his call whether to trim the others or leave it
+        (the sections aren't a strict partition of one buffer at the code
+        level; each is independently sized as max_context_tokens * pct_key
+        * chars_per_token, so exceeding 1.0 doesn't break anything
+        mechanically, it just means the soft budget heuristic can, in the
+        worst case, undersell how much total context a maximally-full
+        turn actually uses).
   1.0.0 (2026-08-12) -- Initial creation. Modelled after NewAgent's
         constant_config.bejson + context_bubble.load_constants() but
         extracted into a standalone AI-family library so any project can
@@ -56,7 +75,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-VERSION = "1.1.0"
+VERSION = "1.2.1"
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +117,8 @@ _DEFAULT_CONSTANTS: list[tuple[str, Any, str]] = [
     ("pct_knowledge_pool",           0.15,  "Share of budget for knowledge-pool drip entries"),
     ("pct_cwd_context",              0.10,  "Share of budget for working-directory context.bejson"),
     ("pct_env_file",                 0.05,  "Share of budget for live environment variable drip"),
+    ("pct_imported_files",           0.15,  "Share of budget for the chat client's user-imported context files"),
+    ("pct_staged_chunk",             0.15,  "Share of budget for the chat client's persistent saved-chunk context (Attach tab Save button)"),
     # ── Drip / scheduling ─────────────────────────────────────────────────────
     ("knowledge_drip_interval",      5,     "Turns between knowledge-pool injections (0 = every turn)"),
     ("env_drip_interval",            5,     "Turns between env-file drip injections (0 = every turn)"),
@@ -115,6 +136,8 @@ PCT_KEYS: list[str] = [
     "pct_knowledge_pool",
     "pct_cwd_context",
     "pct_env_file",
+    "pct_imported_files",
+    "pct_staged_chunk",
 ]
 
 _CONSTANTS_FILENAME = "ai_constants.bejson"

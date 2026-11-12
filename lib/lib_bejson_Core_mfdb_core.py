@@ -7,15 +7,18 @@ Format_Scope:    MFDB only (104a manifest + 104 entity files; NOT 104db)
 Glossary:        BEJSON 104, 104a and 104db are the three file formats (Format_Version). 104db = ONE file holding 2+ entity types
                  (Record_Type_Parent discriminator, null-padding). MFDB is NOT a format and NOT 104db: it is a layer made of one 104a manifest
                  (104a.mfdb.bejson) plus dense 104 entity files linked by Parent_Hierarchy. MFDB-132 = an MFDB packed into one Chunked-104a document.
-Version:         2.3.4
+Version:         2.3.5
 Release_Version: 300
-Date:            2026-10-02
+Date:            2026-10-17
 Author:          Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
 Format_Creator:  Elton Boehnen
-RELATIONAL_ID:   9dd1f252-880b-497a-a21c-1040ec6a7121
+RELATIONAL_ID:   4f8b2d19-6c3a-4e7f-9b5d-1a2c8e4f7b31
 """
 
 # Dynamic recovery and self-healing: deep_verify findings are healed one finding at a time.
+
+VERSION = "2.3.5"
+RELATIONAL_ID = "4f8b2d19-6c3a-4e7f-9b5d-1a2c8e4f7b31"
 
 import json
 import os

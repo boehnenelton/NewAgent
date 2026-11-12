@@ -5,12 +5,13 @@ Description:    BEJSON 104a configuration initialization, loading, and saving.
                 Routes reads/writes through the canonical Core BEJSON library
                 (lib_bejson_Core_bejson_core) for atomic writes and structural
                 validation instead of hand-rolled json.load/dump.
-Version:        1.18.0
-Date:           2026-10-14
+Version:        1.19.0
+Date:           2026-10-24
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  4b322718-69af-452c-a3e6-a1ee9dd34ab3
+RELATIONAL_ID:  7c412829-80bg-463d-b4f7-b2ff0ee45bc4
 
 CHANGELOG:
+- 1.19.0 (2026-10-24): Added agy_skills_enabled (default False), agy_skills_directories, and lib_extensions_directory to DEFAULT_CONFIG for the config-gated Antigravity (agy) skills compatibility layer and unified tool library routing.
 - 1.18.0 (2026-10-16): New default max_auto_continue_turns=12 (agent.py auto-continue guard, pkg128).
 - 1.17.0 (2026-10-14): Added exec_output_cap_bytes default; documented <exec_bg> for long-running commands.
 - 1.16.0 (2026-09-18): Remediation pass, audit finding #1 (HIGH --
@@ -148,7 +149,7 @@ from lib_bejson_Core_bejson_core import (
 )
 from lib_bejson_Core_bejson_validator import validate_bejson
 
-VERSION = "1.18.0"
+VERSION = "1.19.0"
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG: list[tuple[str, Any, str]] = [
@@ -194,6 +195,13 @@ DEFAULT_CONFIG: list[tuple[str, Any, str]] = [
     ("subagents_enabled", False, "Master switch for the sub-agent system (lib_bejson_newagent_subagent_*.py). When false (the default -- new/experimental feature), dispatch_subagent()/run_subagent_turn()/resume_subagent() all refuse immediately with status='disabled' and create/mutate nothing on disk; existing subagent session/signal/profile files are left untouched either way. Flip to true to allow the main agent (or any tool built on top of it) to actually dispatch sub-agent sessions."),
     ("env_secure_file_path", "/storage/emulated/0/.env/secure/secureenv_file.json", "PRIMARY env source (1 of 2): secure/credential vars (API keys etc). See env_templates/ for the blank schema."),
     ("env_paths_file_path", "/storage/emulated/0/.env/user/paths.json", "PRIMARY env source (2 of 2): non-sensitive vars (paths, IDs, model names). See env_templates/ for the blank schema."),
+    ("lib_extensions_directory", "lib_extensions/", "Relative path to extended BEJSON 104 libraries for tools and optional modules."),
+    ("agy_skills_enabled", False, "Master switch (true/false) for the Antigravity (agy) skills compatibility layer (lib_bejson_newagent_agy_skills.py). When false (the default), agy skills are completely disabled with zero context or action overhead. Flip to true to discover SKILL.md bundles and enable <agy_skill> / /skills as an alternative to the tool system."),
+    ("agy_skills_directories", ["/data/data/com.termux/files/home/.gemini/config/skills", "/data/data/com.termux/files/home/.gemini/antigravity-cli/builtin/skills"], "List of directories scanned for Antigravity (agy) SKILL.md bundles when agy_skills_enabled is true."),
+    ("gemini_md_policy_enabled", False, "Master switch (true/false) for global (~/.gemini/GEMINI.md or ~/gemini/GEMINI.md) + ancestor tree-walking (GEMINI.md / AGENTS.md / agents.md from root to CWD) persistent policy support. When false (the default), only Context/Persistent_Policy.md is loaded into Persistent Policy. Flip to true to merge global and tree-walked GEMINI.md/AGENTS.md files into Persistent Policy."),
+    ("gemini_md_global_paths", ["/data/data/com.termux/files/home/.gemini/GEMINI.md", "/data/data/com.termux/files/home/gemini/GEMINI.md"], "Candidate global GEMINI.md paths (first existing file is loaded as global persistent policy baseline when gemini_md_policy_enabled is true)."),
+    ("gemini_md_tree_filenames", ["GEMINI.md", "AGENTS.md", "agents.md"], "Filenames discovered at each ancestor directory from filesystem root down to CWD when gemini_md_policy_enabled is true."),
+    ("gemini_md_max_chars", 36000, "Max characters allocated for combined global + tree-walked GEMINI.md/AGENTS.md persistent policy when gemini_md_policy_enabled is true (0 = use standard pct_persistent_policy budget)."),
 ]
 
 _CONFIG_FIELDS = [

@@ -2,13 +2,17 @@
 Name:         test_autocontinue_guard_pkg128.py
 Description:  Regression tests for the pkg128 auto-continue loop guard and the
               OpenRouter payload / reasoning-leak fixes.
-Version:      1.0.0
-Date:         2026-10-16
-Author:       Elton Boehnen — boehnenelton2024@gmail.com
+Version:      1.0.1
+Date:         2026-10-17
+Author:       Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
+RELATIONAL_ID: 6b4d8e21-3a9c-4f7b-9d1e-5c2a8f4b7e19
 """
 import _libpath  # noqa: F401
 import lib_bejson_newagent_actions as actions
 import lib_bejson_newagent_engine_rest as rest
+
+VERSION = "1.0.1"
+RELATIONAL_ID = "6b4d8e21-3a9c-4f7b-9d1e-5c2a8f4b7e19"
 
 
 def _p(text):

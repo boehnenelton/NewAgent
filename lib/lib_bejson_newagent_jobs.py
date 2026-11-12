@@ -91,12 +91,14 @@ def get_job_path(jobs_dir: Path, name_or_filename: str) -> Optional[Path]:
     name_or_filename = name_or_filename.strip()
     if not name_or_filename:
         return None
-    candidate = jobs_dir / name_or_filename
-    if candidate.is_file():
-        return candidate
-    candidate = jobs_dir / f"{name_or_filename}.bejson"
-    if candidate.is_file():
-        return candidate
+    # 2026-10-17 hardening: a name like "../../x" used to resolve outside jobs/
+    # (jobs_dir / name has no containment check). Require a plain file name whose
+    # resolved parent is jobs_dir itself.
+    root = jobs_dir.resolve()
+    for name in (name_or_filename, f"{name_or_filename}.bejson"):
+        candidate = (jobs_dir / name)
+        if candidate.is_file() and candidate.resolve().parent == root:
+            return candidate
     return None
 
 

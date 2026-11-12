@@ -38,7 +38,6 @@ import lib_bejson_newagent_config as config_lib
 import lib_bejson_newagent_engine_rest as rest
 import lib_bejson_newagent_engine_interactions as interactions
 import lib_bejson_newagent_actions as actions
-import lib_bejson_newagent_errors as errors
 import lib_bejson_newagent_tui as tui
 
 VERSION = "1.4.0"

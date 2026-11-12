@@ -4,14 +4,20 @@
 # Description:  Converts Markdown files to HTML. Default output is unstyled,
 #               semantically correct HTML wrapped in <article> tags.
 #               Use --style to enable the full built-in styled template.
-# Version:      3.1.0
+# Version:      3.2.0
 # Date Created: 2026-05-29
-# Last Updated: 2026-08-30
-# Author:       Elton Boehnen
-# Email:        eltonboehnen@gmail.com
+# Last Updated: 2026-10-24
+# Author:       Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
+# Email:        boehnenelton2024@gmail.com
 # Website:      boehnenelton2024.pages.dev
 # GitHub:       github.com/boehnenelton
-# RELATIONAL_ID: md-to-html-cli-001
+# RELATIONAL_ID: 8e2a4b91-7c3d-4f6a-9b1e-5d2c8a4f7b63
+# CHANGE (2026-10-24): Routed library resolution via md-to-html.config.json
+# (shared_lib_directory and lib_extensions_directory) instead of creating a
+# private lib/ directory or hardcoding fallback paths.
+# CHANGE (2026-10-17, pkg130 remediation): Replaced positional row[0]/row[1] in
+# load_config() with field-map lookup and updated MASTER_LIB_SOURCE to resolve
+# via $ADMIN_LIBRARIES environment variable before fallback.
 # CHANGE (2026-08-30, audit F-30): convert_markdown()'s list handling was
 # anchored to zero indentation (`^[\*\-\+]\s`), so an indented nested
 # list item didn't match at all -- it fell through into an accidental
@@ -44,7 +50,8 @@ import tempfile
 from pathlib import Path
 from datetime import date
 
-VERSION = "3.1.0"
+VERSION = "3.2.0"
+RELATIONAL_ID = "8e2a4b91-7c3d-4f6a-9b1e-5d2c8a4f7b63"
 
 # -----------------------------------------------------------------------------
 # SCRIPT_PATH — Dynamic resolution, never hardcoded
@@ -53,30 +60,6 @@ def get_script_path() -> Path:
     return Path(__file__).resolve().parent
 
 SCRIPT_PATH = get_script_path()
-
-# -----------------------------------------------------------------------------
-# LIBRARY BOOTSTRAPPING
-# -----------------------------------------------------------------------------
-LIB_DIR = SCRIPT_PATH / "lib"
-MASTER_LIB_SOURCE = "/storage/emulated/0/Admin/libraries/Lib_PY/Core"
-
-REQUIRED_LIBS = [
-    "lib_bejson_core.py",
-    "lib_bejson_env.py",
-    "lib_bejson_errors.py"
-]
-
-def bootstrap():
-    LIB_DIR.mkdir(parents=True, exist_ok=True)
-    for lib in REQUIRED_LIBS:
-        target = LIB_DIR / lib
-        if not target.exists():
-            source = Path(MASTER_LIB_SOURCE) / lib
-            if source.exists():
-                shutil.copy(source, target)
-
-bootstrap()
-sys.path.insert(0, str(LIB_DIR))
 
 # -----------------------------------------------------------------------------
 # CONFIGURATION — BEJSON 104a, auto-created on first run, atomic writes
@@ -97,7 +80,11 @@ DEFAULT_CONFIG = {
         ["output_folder_name", "MD_TO_HTML",
          "Name of the output folder created for converted files."],
         ["default_description", "Document converted from Markdown.",
-         "Fallback SEO meta description when none can be extracted."]
+         "Fallback SEO meta description when none can be extracted."],
+        ["shared_lib_directory", "../../lib",
+         "Relative path to NewAgent shared Core BEJSON libraries."],
+        ["lib_extensions_directory", "../../lib_extensions",
+         "Relative path to NewAgent extension libraries."]
     ]
 }
 
@@ -111,11 +98,32 @@ def _write_config(data: dict):
     os.replace(tmp, CONFIG_FILE)
 
 def load_config() -> dict:
-    """Return config as a flat key→value dict."""
+    """Return config as a flat key→value dict via BEJSON 104a field map."""
     raw = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-    return {row[0]: row[1] for row in raw.get("Values", [])}
+    fmap = {f.get("name"): i for i, f in enumerate(raw.get("Fields", [])) if isinstance(f, dict)}
+    k_idx = fmap.get("setting_name", 0)
+    v_idx = fmap.get("setting_value", 1)
+    return {
+        row[k_idx]: row[v_idx]
+        for row in raw.get("Values", [])
+        if isinstance(row, list) and len(row) > max(k_idx, v_idx)
+    }
 
 init_config()
+
+# -----------------------------------------------------------------------------
+# LIBRARY BOOTSTRAPPING — Routed via config.json to shared lib & lib_extensions
+# -----------------------------------------------------------------------------
+def bootstrap():
+    tool_config_dict = load_config()
+    shared_lib_rel_path = tool_config_dict.get("shared_lib_directory", "../../lib")
+    lib_extensions_rel_path = tool_config_dict.get("lib_extensions_directory", "../../lib_extensions")
+    for rel_dir in (shared_lib_rel_path, lib_extensions_rel_path):
+        resolved_lib_dir = (SCRIPT_PATH / rel_dir).resolve()
+        if resolved_lib_dir.is_dir() and str(resolved_lib_dir) not in sys.path:
+            sys.path.insert(0, str(resolved_lib_dir))
+
+bootstrap()
 
 # =============================================================================
 # MARKDOWN → HTML CONVERSION ENGINE

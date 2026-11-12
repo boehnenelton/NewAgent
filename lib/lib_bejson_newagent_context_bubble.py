@@ -17,12 +17,23 @@ Description:    Context Bubble pipeline (pkg015) — replaces the pkg014-removed
                 even sent to the compression call, so there's a structural
                 guarantee it can't be altered by a summarization mistake, not
                 just an instruction asking the model not to touch it.
-Version:        1.18.0
-Date:           2026-09-18
+Version:        1.20.0
+Date:           2026-11-11
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
 RELATIONAL_ID:  833087a5-4830-4990-b9bf-130f217c4a40
 
 CHANGELOG:
+- 1.20.0 (2026-11-11): Context Keywords Optimization --
+  extended resolve_context_target() to support skill:// and agy:// (direct
+  skill chunking), repo:// (automatic raw GitHub repo resolution), and
+  http:// / https:// (TTL-cached remote URL fetching with 15m cache and 4s
+  timeout). Deduped keyword triggers and wired 18 new ecosystem skill triggers
+  into config/triggers.bejson.
+- 1.19.0 (2026-11-11): Semantic Conditions Trigger Engine integration --
+  wired config/semantic_triggers.bejson and lib_bejson_newagent_semantic_triggers
+  into _paths() and assemble_bubble(). Injects always-visible trigger conditions
+  awareness table and conditional chunked skill definitions under dedicated
+  '## Semantic Conditions' section.
 - 1.18.0 (2026-10-13): Audit remediation -- build_env_file_section() masks
   secret values (var_type == 'secret' or KEY/TOKEN/SECRET/PASSWORD names)
   via errors.mask_value so raw API keys no longer enter the context bubble
@@ -165,7 +176,9 @@ CHANGELOG:
   clearing history unless a real recap string comes back.
 """
 
+import hashlib
 import logging
+import os
 import threading
 import time
 from pathlib import Path
@@ -180,7 +193,7 @@ from lib_bejson_Core_bejson_core import (
 from lib_bejson_Core_bejson_validator import validate_bejson
 import lib_bejson_newagent_errors as errors
 
-VERSION = "1.18.0"
+VERSION = "1.20.0"
 
 # ── mtime-based read cache (Remediation pkg, audit finding #4) ─────────────
 _FILE_CACHE_LOCK = threading.Lock()
@@ -312,6 +325,7 @@ def _paths(context_dir: Path, config_dir: Path, logs_dir: Path) -> dict:
         "situational": context_dir / "Situational_Awareness",
         "constants": config_dir / "constant_config.bejson",
         "triggers": config_dir / "triggers.bejson",
+        "semantic_triggers": config_dir / "semantic_triggers.bejson",
         "knowledge": config_dir / "knowledge_pool.bejson",
         "logs": logs_dir / "context_logs.bejson",
     }
@@ -445,11 +459,249 @@ def _budget_chars(constants: dict, pct_key: str) -> int:
 
 # ── Bubble assembly ──────────────────────────────────────────────────────────
 
+DEFAULT_GEMINI_MD_GLOBAL_PATHS: list[str] = [
+    "/data/data/com.termux/files/home/.gemini/GEMINI.md",
+    "/data/data/com.termux/files/home/gemini/GEMINI.md",
+]
+
+DEFAULT_GEMINI_MD_TREE_FILENAMES: list[str] = [
+    "GEMINI.md",
+    "AGENTS.md",
+    "agents.md",
+]
+
+
 def _read_policy(policy_path: Path, budget_chars: int) -> str:
     if not policy_path.exists():
         return ""
     text = _cached_read(policy_path, lambda p: p.read_text("utf-8", errors="replace"))
     return text[:budget_chars]
+
+
+def is_gemini_md_policy_enabled(agent_config_dict: Optional[dict[str, Any]]) -> bool:
+    """Return True only when gemini_md_policy_enabled is explicitly enabled in config."""
+    if not isinstance(agent_config_dict, dict):
+        return False
+    raw_enabled_flag = agent_config_dict.get("gemini_md_policy_enabled", False)
+    if isinstance(raw_enabled_flag, bool):
+        return raw_enabled_flag
+    return str(raw_enabled_flag).strip().lower() == "true"
+
+
+def _coerce_string_list_setting(raw_setting_val: Any, default_items: list[str]) -> list[str]:
+    if isinstance(raw_setting_val, list):
+        return [str(entry).strip() for entry in raw_setting_val if str(entry).strip()]
+    if isinstance(raw_setting_val, str):
+        stripped_text = raw_setting_val.strip()
+        if stripped_text.startswith("["):
+            try:
+                parsed_list = json.loads(stripped_text)
+                if isinstance(parsed_list, list):
+                    return [str(entry).strip() for entry in parsed_list if str(entry).strip()]
+            except Exception:
+                pass
+        return [segment.strip() for segment in stripped_text.split(",") if segment.strip()]
+    return list(default_items)
+
+
+def discover_gemini_md_policy_files(
+    cwd_target_path: Path | str,
+    agent_config_dict: Optional[dict[str, Any]],
+) -> list[tuple[str, Path]]:
+    """
+    When gemini_md_policy_enabled is True, returns an ordered list of
+    (scope_label, resolved_file_path) tuples:
+      1. First existing global GEMINI.md from gemini_md_global_paths (~/.gemini/GEMINI.md or ~/gemini/GEMINI.md).
+      2. Every GEMINI.md / AGENTS.md / agents.md (plus .gemini/GEMINI.md) found along the
+         root-to-CWD ancestor chain, deduplicated by resolved path and content hash.
+    Returns [] immediately when gemini_md_policy_enabled is False.
+    """
+    if not is_gemini_md_policy_enabled(agent_config_dict):
+        return []
+
+    global_candidate_strings = _coerce_string_list_setting(
+        (agent_config_dict or {}).get("gemini_md_global_paths"),
+        DEFAULT_GEMINI_MD_GLOBAL_PATHS,
+    )
+    tree_candidate_filenames = _coerce_string_list_setting(
+        (agent_config_dict or {}).get("gemini_md_tree_filenames"),
+        DEFAULT_GEMINI_MD_TREE_FILENAMES,
+    )
+
+    discovered_policy_files: list[tuple[str, Path]] = []
+    seen_resolved_paths: set[Path] = set()
+    seen_content_hashes: set[str] = set()
+
+    import hashlib
+
+    def _register_candidate_file(scope_tag: str, candidate_path: Path) -> bool:
+        try:
+            if not candidate_path.is_file():
+                return False
+            resolved_file = candidate_path.resolve()
+        except OSError:
+            return False
+        if resolved_file in seen_resolved_paths:
+            return False
+        try:
+            file_text = _cached_read(
+                resolved_file, lambda path_obj: path_obj.read_text("utf-8", errors="replace")
+            )
+        except Exception:
+            return False
+        if not file_text or not file_text.strip():
+            return False
+        content_digest = hashlib.sha256(file_text.strip().encode("utf-8", errors="replace")).hexdigest()
+        if content_digest in seen_content_hashes:
+            seen_resolved_paths.add(resolved_file)
+            return False
+        seen_resolved_paths.add(resolved_file)
+        seen_content_hashes.add(content_digest)
+        discovered_policy_files.append((scope_tag, resolved_file))
+        return True
+
+    # 1. Global baseline GEMINI.md (first existing global file wins)
+    for raw_global_path in global_candidate_strings:
+        expanded_global_path = Path(os.path.expandvars(os.path.expanduser(raw_global_path)))
+        if _register_candidate_file("global", expanded_global_path):
+            break
+
+    # 2. Root-to-leaf ancestor tree walk (broadest first, CWD leaf last)
+    try:
+        resolved_cwd_dir = Path(cwd_target_path).expanduser().resolve()
+    except OSError:
+        resolved_cwd_dir = Path(cwd_target_path)
+
+    ancestors_root_first = list(reversed(list(resolved_cwd_dir.parents))) + [resolved_cwd_dir]
+    for ancestor_directory_path in ancestors_root_first:
+        dot_gemini_candidate = ancestor_directory_path / ".gemini" / "GEMINI.md"
+        _register_candidate_file("tree", dot_gemini_candidate)
+        for tree_filename in tree_candidate_filenames:
+            _register_candidate_file("tree", ancestor_directory_path / tree_filename)
+
+    return discovered_policy_files
+
+
+def build_persistent_policy_section(
+    local_policy_path: Path,
+    cwd_target_path: Path | str,
+    base_policy_budget_chars: int,
+    agent_config_dict: Optional[dict[str, Any]] = None,
+) -> str:
+    """
+    Build the Persistent Policy text for Context_Bubble.md.
+    - When gemini_md_policy_enabled is False (default): returns _read_policy(local_policy_path, base_policy_budget_chars).
+    - When gemini_md_policy_enabled is True: merges Context/Persistent_Policy.md with the global
+      GEMINI.md (~/.gemini/GEMINI.md or ~/gemini/GEMINI.md) and root-to-CWD tree-walked
+      GEMINI.md / AGENTS.md files, preserving leaf (CWD) project files with priority so a large
+      global GEMINI.md never starves project-local instructions.
+    """
+    base_local_text = _read_policy(local_policy_path, base_policy_budget_chars)
+    if not is_gemini_md_policy_enabled(agent_config_dict):
+        return base_local_text
+
+    discovered_chain = discover_gemini_md_policy_files(cwd_target_path, agent_config_dict)
+    if not discovered_chain:
+        return base_local_text
+
+    configured_max_chars = 0
+    if isinstance(agent_config_dict, dict):
+        try:
+            configured_max_chars = int(agent_config_dict.get("gemini_md_max_chars", 36000) or 0)
+        except (TypeError, ValueError):
+            configured_max_chars = 36000
+    effective_budget_chars = (
+        max(base_policy_budget_chars, configured_max_chars)
+        if configured_max_chars > 0
+        else base_policy_budget_chars
+    )
+
+    loaded_blocks_by_index: dict[int, str] = {}
+    remaining_chars = max(0, effective_budget_chars - len(base_local_text))
+
+    # Allocate budget to tree-walked files from nearest leaf (CWD) up to root first,
+    # then allocate the remaining budget to global GEMINI.md so leaf instructions are never starved.
+    tree_indices_nearest_first = [
+        chain_idx
+        for chain_idx in range(len(discovered_chain) - 1, -1, -1)
+        if discovered_chain[chain_idx][0] == "tree"
+    ]
+    global_indices = [
+        chain_idx
+        for chain_idx in range(len(discovered_chain))
+        if discovered_chain[chain_idx][0] == "global"
+    ]
+
+    for priority_idx in tree_indices_nearest_first + global_indices:
+        if remaining_chars <= 0:
+            break
+        scope_label, file_path_obj = discovered_chain[priority_idx]
+        raw_file_content = _cached_read(
+            file_path_obj, lambda path_item: path_item.read_text("utf-8", errors="replace")
+        ).strip()
+        if not raw_file_content:
+            continue
+        header_tag = (
+            f"### [Global GEMINI.md Policy — {file_path_obj}]"
+            if scope_label == "global"
+            else f"### [Tree Policy ({file_path_obj.name}) — {file_path_obj}]"
+        )
+        candidate_block = f"{header_tag}\n{raw_file_content}"
+        if len(candidate_block) > remaining_chars:
+            if remaining_chars > len(header_tag) + 32:
+                candidate_block = candidate_block[: remaining_chars - 16] + "\n...[truncated]"
+                loaded_blocks_by_index[priority_idx] = candidate_block
+                remaining_chars = 0
+            continue
+        loaded_blocks_by_index[priority_idx] = candidate_block
+        remaining_chars -= len(candidate_block) + 2
+
+    ordered_policy_parts: list[str] = []
+    if base_local_text:
+        ordered_policy_parts.append(base_local_text)
+    for chain_idx in range(len(discovered_chain)):
+        if chain_idx in loaded_blocks_by_index:
+            ordered_policy_parts.append(loaded_blocks_by_index[chain_idx])
+
+    return "\n\n".join(ordered_policy_parts)
+
+
+def format_gemini_md_policy_status_report(
+    cwd_target_path: Path | str,
+    agent_config_dict: Optional[dict[str, Any]],
+) -> str:
+    """Format a human-readable status report for /geminimd."""
+    enabled_state = is_gemini_md_policy_enabled(agent_config_dict)
+    status_str = "ENABLED (true)" if enabled_state else "DISABLED (false)"
+    global_paths = _coerce_string_list_setting(
+        (agent_config_dict or {}).get("gemini_md_global_paths"),
+        DEFAULT_GEMINI_MD_GLOBAL_PATHS,
+    )
+    tree_names = _coerce_string_list_setting(
+        (agent_config_dict or {}).get("gemini_md_tree_filenames"),
+        DEFAULT_GEMINI_MD_TREE_FILENAMES,
+    )
+    report_lines = [
+        f"GEMINI.md Global + Tree-Walking Persistent Policy: {status_str}",
+        f"Config key: gemini_md_policy_enabled = {str(enabled_state).lower()}",
+        f"Global candidate paths: {', '.join(global_paths)}",
+        f"Tree filenames (root -> CWD): {', '.join(tree_names)}",
+    ]
+    if not enabled_state:
+        report_lines.append(
+            "Use '/geminimd on' to enable (persists to config/config.json) or '/geminimd off' to disable."
+        )
+        return "\n".join(report_lines)
+
+    chain = discover_gemini_md_policy_files(cwd_target_path, agent_config_dict)
+    report_lines.append(f"Active policy chain for CWD ({cwd_target_path}): {len(chain)} file(s)")
+    for idx, (scope_tag, file_path) in enumerate(chain, 1):
+        try:
+            byte_size = file_path.stat().st_size
+        except OSError:
+            byte_size = 0
+        report_lines.append(f"  {idx}. [{scope_tag.upper()}] {file_path} ({byte_size} bytes)")
+    return "\n".join(report_lines)
 
 
 def trim_history(history: list, max_turns: int) -> None:
@@ -523,6 +775,111 @@ def scan_triggers(
     return matches
 
 
+# ── URL and Target Content Fetching Cache ─────────────────────────────────────
+_URL_CACHE_LOCK = threading.Lock()
+_URL_CACHE: dict[str, tuple[float, str]] = {}  # url -> (fetch_time, content)
+_URL_CACHE_TTL_SECONDS = 900.0  # 15 minutes
+
+
+def _fetch_url_content(url_address: str, timeout_seconds: float = 4.0, max_chars: int = 4000) -> Optional[str]:
+    """Fetch text/markdown content from a URL with an in-memory TTL cache and timeout."""
+    import urllib.request
+    current_time = time.time()
+    with _URL_CACHE_LOCK:
+        cached_entry = _URL_CACHE.get(url_address)
+        if cached_entry is not None and (current_time - cached_entry[0]) < _URL_CACHE_TTL_SECONDS:
+            return cached_entry[1]
+
+    try:
+        url_request = urllib.request.Request(
+            url_address,
+            headers={"User-Agent": "NewAgent/3.50 (ContextFetcher; Termux Android)"},
+        )
+        with urllib.request.urlopen(url_request, timeout=timeout_seconds) as response_stream:
+            raw_payload_bytes = response_stream.read(max_chars * 2)
+            decoded_text = raw_payload_bytes.decode("utf-8", errors="replace")[:max_chars]
+            with _URL_CACHE_LOCK:
+                _URL_CACHE[url_address] = (current_time, decoded_text)
+            return decoded_text
+    except Exception as network_exc:
+        logger.warning("[ContextBubble] Failed to fetch URL %s: %s", url_address, network_exc)
+        with _URL_CACHE_LOCK:
+            if url_address in _URL_CACHE:
+                return _URL_CACHE[url_address][1]
+        return None
+
+
+def _resolve_repo_url(repo_target_string: str) -> str:
+    """Translate repo://owner/repo/[branch/]path to a raw GitHub URL.
+    Examples:
+      repo://boehnenelton/NewAgent/master/README.md -> https://raw.githubusercontent.com/boehnenelton/NewAgent/master/README.md
+      repo://boehnenelton/NewAgent/README.md -> https://raw.githubusercontent.com/boehnenelton/NewAgent/master/README.md
+    """
+    clean_path = repo_target_string[len("repo://"):].strip("/")
+    path_segments = clean_path.split("/")
+    if len(path_segments) >= 4:
+        return f"https://raw.githubusercontent.com/{'/'.join(path_segments)}"
+    elif len(path_segments) == 3:
+        owner, repo, filename = path_segments
+        return f"https://raw.githubusercontent.com/{owner}/{repo}/master/{filename}"
+    return f"https://raw.githubusercontent.com/{clean_path}"
+
+
+def resolve_context_target(
+    context_path_value: str,
+    situational_dir: Path,
+    knowledge_path: Optional[Path] = None,
+    budget_chars: int = 4000,
+) -> Optional[str]:
+    """Resolve a context target to its content across multiple protocols:
+    - kb://<info_id>: row lookup in knowledge_pool.bejson
+    - skill://<name_or_path> or agy://<name>: chunked latest SKILL.md from installed skills
+    - http:// or https://: remote web/markdown fetch with TTL cache
+    - repo://owner/repo/branch/path: raw GitHub repo markdown fetch
+    - local file path: read from situational_dir or filesystem
+    """
+    if not context_path_value:
+        return None
+
+    stripped_path = context_path_value.strip()
+
+    # 1. Knowledge Pool lookup
+    if stripped_path.startswith("kb://"):
+        return _lookup_knowledge_entry(knowledge_path, stripped_path[5:]) if knowledge_path else None
+
+    # 2. Skill folder chunking (pulls latest info directly from skills)
+    if stripped_path.startswith(("skill://", "agy://")):
+        try:
+            import lib_bejson_newagent_semantic_triggers as semantic_triggers_module
+            resolved_skill_path = semantic_triggers_module.resolve_triggered_action_path(stripped_path)
+            if resolved_skill_path:
+                return semantic_triggers_module.chunk_skill_folder(resolved_skill_path, budget_chars=budget_chars)
+        except Exception as skill_exc:
+            logger.warning("[ContextBubble] Failed resolving skill context target %s: %s", stripped_path, skill_exc)
+        return None
+
+    # 3. Remote URL fetching
+    if stripped_path.startswith(("http://", "https://")):
+        return _fetch_url_content(stripped_path, max_chars=budget_chars)
+
+    # 4. Repo URL fetching
+    if stripped_path.startswith("repo://"):
+        resolved_http_url = _resolve_repo_url(stripped_path)
+        return _fetch_url_content(resolved_http_url, max_chars=budget_chars)
+
+    # 5. Local situational / filesystem file
+    candidate_file_path = Path(stripped_path)
+    if not candidate_file_path.is_absolute():
+        candidate_file_path = situational_dir / stripped_path
+    if not candidate_file_path.is_file():
+        return None
+    try:
+        return candidate_file_path.read_text("utf-8", errors="replace")
+    except Exception as file_read_exc:
+        logger.warning("[ContextBubble] Failed reading situational file %s: %s", candidate_file_path, file_read_exc)
+        return None
+
+
 def build_keyword_section(
     matches: list[dict], situational_dir: Path, budget_chars: int,
     knowledge_path: Optional[Path] = None,
@@ -531,27 +888,18 @@ def build_keyword_section(
         return "", 0
     parts = []
     used = 0
-    seen_content = set()  # dedup: e.g. "bejson" and "104a" both said in one
-                           # message both resolve kb://bejson_core_3 -- only
-                           # inject it once, under whichever keyword matched
-                           # first (trigger row order in triggers.bejson).
+    seen_content = set()  # dedup: only inject unique resolved content once
+
     for m in matches:
-        context_path = m["context_path"] or ""
-        if context_path.startswith("kb://"):
-            # Points at one specific knowledge_pool.bejson entry by info_id
-            # instead of a whole file — a keyword can surface a single
-            # focused fact rather than dragging in an entire document.
-            content = _lookup_knowledge_entry(knowledge_path, context_path[5:]) if knowledge_path else None
-            if content is None:
-                continue
-        else:
-            fpath = situational_dir / context_path
-            if not fpath.exists():
-                continue
-            try:
-                content = fpath.read_text("utf-8", errors="replace")
-            except Exception:
-                continue
+        context_path = m.get("context_path") or ""
+        content = resolve_context_target(
+            context_path,
+            situational_dir,
+            knowledge_path=knowledge_path,
+            budget_chars=max(1000, budget_chars - used),
+        )
+        if not content:
+            continue
         if content in seen_content:
             continue
         seen_content.add(content)
@@ -978,6 +1326,7 @@ def assemble_bubble(
     cooldown_state: dict[str, float],
     cwd: str = ".",
     env_file_paths: list[str] = None,
+    config: Optional[dict] = None,
 ) -> dict:
     """
     Builds the full bubble content in memory (one atomic write at the end,
@@ -1000,7 +1349,9 @@ def assemble_bubble(
         knowledge_budget = _budget_chars(constants, "pct_knowledge_pool")
         cwd_budget = _budget_chars(constants, "pct_cwd_context")
 
-        policy_text = _read_policy(p["policy"], policy_budget)
+        policy_text = build_persistent_policy_section(
+            p["policy"], cwd, policy_budget, agent_config_dict=config
+        )
         active_tasks_text, active_tasks_used = build_active_tasks_section(cwd, active_tasks_budget)
         cwd_text, cwd_used = build_cwd_context_section(Path(cwd), cwd_budget)
         env_file_text, env_file_used = build_env_file_section(
@@ -1019,6 +1370,35 @@ def assemble_bubble(
         knowledge_text, knowledge_used = build_knowledge_section(
             p["knowledge"], turn, constants.get("knowledge_drip_interval", 5), knowledge_budget
         )
+
+        agy_skills_text = ""
+        agy_skills_matched = 0
+        if config and config.get("agy_skills_enabled", False):
+            import lib_bejson_newagent_agy_skills as agy_skills
+            agy_skills_text, agy_skills_matched = agy_skills.build_agy_skills_context_section(
+                user_msg, config, budget_chars=max(800, keyword_budget)
+            )
+
+        # ── Semantic Conditions Triggers ──────────────────────────────
+        semantic_triggers_text = ""
+        semantic_triggers_awareness_used = 0
+        semantic_triggers_actions_used = 0
+        if p["semantic_triggers"].exists():
+            try:
+                import lib_bejson_newagent_semantic_triggers as semantic_triggers_module
+                semantic_triggers_text, semantic_triggers_awareness_used, semantic_triggers_actions_used = (
+                    semantic_triggers_module.build_semantic_triggers_context(
+                        user_msg,
+                        p["semantic_triggers"],
+                        cooldown_state,
+                        awareness_budget_chars=2000,
+                        action_budget_chars=max(2000, keyword_budget),
+                        global_default_cooldown_seconds=constants.get("global_default_cooldown", 300),
+                    )
+                )
+            except Exception as semantic_exc:
+                logger.warning("[ContextBubble] Semantic triggers failed (non-fatal): %s", semantic_exc)
+
     except Exception as exc:
         raise errors.ContextInjectionError(
             f"Thought Bubble assembly failed while building sections: {exc}"
@@ -1036,6 +1416,10 @@ def assemble_bubble(
         sections.append(f"## Keyword Triggers\n{keyword_text}")
     if knowledge_text:
         sections.append(f"## Knowledge Pool\n{knowledge_text}")
+    if agy_skills_text:
+        sections.append(agy_skills_text)
+    if semantic_triggers_text:
+        sections.append(f"## Semantic Conditions\n{semantic_triggers_text}")
     full_text = "\n\n".join(sections)
 
     try:
@@ -1052,6 +1436,9 @@ def assemble_bubble(
         "cwd_tokens": cwd_used // constants.get("chars_per_token", 4),
         "keyword_tokens": keyword_used // constants.get("chars_per_token", 4),
         "knowledge_tokens": knowledge_used // constants.get("chars_per_token", 4),
+        "agy_skills_matched": agy_skills_matched,
+        "semantic_triggers_awareness_chars": semantic_triggers_awareness_used,
+        "semantic_triggers_actions_chars": semantic_triggers_actions_used,
         "max_context_tokens": constants.get("max_context_tokens", 8000),
         "chars_per_token": constants.get("chars_per_token", 4),
         "observer_enabled": bool(constants.get("observer_enabled", False)),

@@ -2,12 +2,16 @@
 Library:        lib_bejson_newagent_session.py
 Family:         NewAgent
 Description:    Atomic session logger, resume file persistence, named session archiving.
-Version:        2.9.0
-Date:           2026-10-14
-Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  9089c628-6625-4cc0-94b2-d363df24cfe6
+Version:        2.10.0
+Date:           2026-10-17
+Author:         Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
+RELATIONAL_ID:  6e8f4c12-9a3b-4d7e-8c1a-5b2d9e4f7a18
 
 CHANGELOG:
+- 2.10.0 (2026-10-17): Policy §6.2 remediation: replaced positional row[:11] and row[11]
+  indexing in _render_transcript_markdown() with _require_field(fmap, ...) lookups
+  resolved via bejson_core_get_field_map(doc) (with _TRANSCRIPT_FIELDS fallback when
+  fmap is omitted by direct test callers).
 - 2.9.0 (2026-10-14): Markdown transcript export uses a "--------" divider with blank lines around it.
 - 2.8.0 (2026-10-13): Added prune_old_logs() (3-day hard delete of session
   logs, raw API dumps and legacy archive zips; replaces zip-and-archive at
@@ -91,7 +95,8 @@ from lib_bejson_Core_bejson_core import (
 from lib_bejson_Core_bejson_validator import validate_bejson
 import lib_bejson_newagent_errors as errors
 
-VERSION = "2.9.0"
+VERSION = "2.10.0"
+RELATIONAL_ID = "6e8f4c12-9a3b-4d7e-8c1a-5b2d9e4f7a18"
 
 _SESSION_INDEX_FIELDS = [
     {"name": "label", "type": "string"},
@@ -167,7 +172,11 @@ _104DB_FIELDS = [
     {"name": "timestamp_action", "type": "string", "Record_Type_Parent": "Action"},
 ]
 
-def _render_transcript_markdown(session_name: str, rows: list[list]) -> str:
+def _render_transcript_markdown(
+    session_name: str,
+    rows: list[list],
+    fmap: Optional[dict[str, int]] = None,
+) -> str:
     """
     Shared rendering engine for both SessionLogger's (now manual-only)
     regeneration and the standalone convert_session_to_markdown() below --
@@ -177,12 +186,40 @@ def _render_transcript_markdown(session_name: str, rows: list[list]) -> str:
     when present, falling back to the short HH:MM:SS timestamp for any
     older log row logged before that field existed.
     """
+    active_fmap = (
+        dict(fmap)
+        if isinstance(fmap, dict) and fmap
+        else {f["name"]: idx for idx, f in enumerate(_TRANSCRIPT_FIELDS)}
+    )
+    ts_idx = _require_field(active_fmap, "timestamp")
+    role_idx = _require_field(active_fmap, "role")
+    content_idx = _require_field(active_fmap, "content")
+    bubble_idx = _require_field(active_fmap, "bubble_content")
+    policy_idx = _require_field(active_fmap, "policy_tokens")
+    tasks_idx = _require_field(active_fmap, "active_tasks_tokens")
+    env_idx = _require_field(active_fmap, "env_file_tokens")
+    cwd_idx = _require_field(active_fmap, "cwd_tokens")
+    kw_idx = _require_field(active_fmap, "keyword_tokens")
+    know_idx = _require_field(active_fmap, "knowledge_tokens")
+    note_idx = _require_field(active_fmap, "observer_note")
+    ts_iso_idx = active_fmap.get("timestamp_iso", -1)
+
     lines = [f"# NewAgent Session — {session_name}\n"]
     for row in rows:
         if len(row) < 11:
             continue
-        ts, role, content, bubble_content, policy_tok, active_tasks_tok, env_tok, cwd_tok, keyword_tok, knowledge_tok, note = row[:11]
-        ts_iso = row[11] if len(row) > 11 and row[11] else ts
+        ts = row[ts_idx]
+        role = row[role_idx]
+        content = row[content_idx]
+        bubble_content = row[bubble_idx]
+        policy_tok = row[policy_idx]
+        active_tasks_tok = row[tasks_idx]
+        env_tok = row[env_idx]
+        cwd_tok = row[cwd_idx]
+        keyword_tok = row[kw_idx]
+        knowledge_tok = row[know_idx]
+        note = row[note_idx]
+        ts_iso = row[ts_iso_idx] if 0 <= ts_iso_idx < len(row) and row[ts_iso_idx] else ts
         lines.append(f"### [{ts_iso}] [{(role or '').upper()}]")
         lines.append(content or "")
         if bubble_content:
@@ -219,7 +256,8 @@ def convert_session_to_markdown(bejson_log_path: Path) -> tuple[bool, str]:
         return False, f"{bejson_log_path} isn't readable as BEJSON."
 
     md_path = bejson_log_path.with_suffix(".md")
-    md_text = _render_transcript_markdown(bejson_log_path.stem, doc.get("Values", []))
+    fmap = bejson_core_get_field_map(doc)
+    md_text = _render_transcript_markdown(bejson_log_path.stem, doc.get("Values", []), fmap=fmap)
     try:
         md_path.write_text(md_text, encoding="utf-8")
     except Exception as exc:
@@ -463,7 +501,6 @@ class SessionLogger:
         Appends relational Turn and Action entities into the 104db store,
         updating the top-level Session entity metrics in real-time.
         """
-        import uuid
         with self._lock:
             self._turn_counter += 1
             turn_id = f"turn_{self.session_guid}_{self._turn_counter}"

@@ -359,6 +359,86 @@
       "pydroid",
       "kb://environment_1",
       900
+    ],
+    [
+      "bejson 104 core",
+      "skill://bejson-104-core",
+      900
+    ],
+    [
+      "bejson 105 core",
+      "skill://bejson-105-core",
+      900
+    ],
+    [
+      "bejson validator",
+      "skill://bejson-104-validator",
+      900
+    ],
+    [
+      "behtml design",
+      "skill://behtml-design-preferences",
+      600
+    ],
+    [
+      "terminal cli",
+      "skill://design-terminal-cli",
+      900
+    ],
+    [
+      "terminal menu",
+      "skill://design-terminal-menu",
+      900
+    ],
+    [
+      "anti fluff",
+      "skill://anti-fluff-auditor",
+      900
+    ],
+    [
+      "download sweep",
+      "skill://file-archive-coordinator",
+      900
+    ],
+    [
+      "package release",
+      "skill://project-delivery-packager",
+      900
+    ],
+    [
+      "job workflow",
+      "skill://job-lifecycle-coordinator",
+      900
+    ],
+    [
+      "env definitions",
+      "skill://env-definitions-manager",
+      900
+    ],
+    [
+      "code chunking",
+      "skill://chunking-core",
+      900
+    ],
+    [
+      "skill catalog",
+      "skill://skill-ecosystem-cartographer",
+      900
+    ],
+    [
+      "newagent repo",
+      "repo://boehnenelton/NewAgent/master/README.md",
+      900
+    ],
+    [
+      "newagent readme",
+      "repo://boehnenelton/NewAgent/master/README.md",
+      900
+    ],
+    [
+      "repo url",
+      "https://raw.githubusercontent.com/boehnenelton/NewAgent/master/README.md",
+      900
     ]
   ]
 }

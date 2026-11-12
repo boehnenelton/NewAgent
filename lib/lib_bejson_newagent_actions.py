@@ -102,9 +102,10 @@ import shutil
 import subprocess
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Optional, Callable
+from typing import Optional
 from lib_bejson_newagent_tui import ExecResult
 from lib_bejson_newagent_backup import record_backup, restore_backup, get_live_backup_ids
 from lib_bejson_Core_bejson_core import (
@@ -219,7 +220,7 @@ ACTION_PATTERN = re.compile(
     r"html_report|html_report_append|project_log|request_continue|"
     r"bejson_fields|bejson_add_field|bejson_delete_field|bejson_create_record|"
     r"bejson_delete_record|bejson_set_value|bejson_columns|bejson_create|context_set|"
-    r"exec_bg|task_status|task_kill|task_list)(?:\s+([^>]*))?>(.*?)</\1>|<(copy_file|task_list|job_task_done)(?:\s+([^>]*))?\s*/>",
+    r"exec_bg|task_status|task_kill|task_list|agy_skill)(?:\s+([^>]*?))?(?<!/)>(.*?)</\1>|<(copy_file|task_list|job_task_done|agy_skill)(?:\s+([^>]*?))?\s*/>",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -499,12 +500,17 @@ async def do_exec(
         # still a fresh subprocess — only the within-one-call behavior is
         # fixed.
         bash_exec = "/data/data/com.termux/files/usr/bin/bash" if os.path.exists("/data/data/com.termux/files/usr/bin/bash") else (shutil.which("bash") or "/bin/sh")
+
+        # Strip exported environment BASH_FUNC_* variables that trigger bash startup warnings if exported improperly
+        exec_env = os.environ.copy() if shell_env is None else shell_env.copy()
+        exec_env = {k: v for k, v in exec_env.items() if not k.startswith("BASH_FUNC_")}
+
         proc = await asyncio.create_subprocess_shell(
             cmd_to_run,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             executable=bash_exec,
-            env=shell_env,  # None => inherit parent env (first call / no persisted state yet)
+            env=exec_env,
         )
 
         stdout_chunks = []
@@ -1050,15 +1056,42 @@ def do_restore_file(backup_id: str) -> str:
     ok, msg = restore_backup(backup_id)
     return f"[SUCCESS] {msg}" if ok else f"[ERROR] {msg}"
 
+class _HttpOnlyRedirects(urllib.request.HTTPRedirectHandler):
+    """2026-10-17 hardening: urllib follows redirects to ftp:// (and the like) by
+    default, sidestepping the http/https check on the original URL. Re-validate
+    every hop."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urllib.parse.urlparse(newurl).scheme.lower() not in ("http", "https"):
+            raise urllib.error.HTTPError(newurl, code, "redirect to non-http(s) scheme blocked", headers, fp)
+        if _is_metadata_host(urllib.parse.urlparse(newurl).hostname):
+            raise urllib.error.HTTPError(newurl, code, "redirect to link-local address blocked", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _is_metadata_host(hostname) -> bool:
+    """True for link-local addresses (169.254.0.0/16, fe80::/10) -- cloud metadata
+    endpoints live there and no legitimate http_get target does."""
+    import ipaddress
+    try:
+        return ipaddress.ip_address(hostname or "").is_link_local
+    except ValueError:
+        return False
+
+
 def do_http_get(url: str) -> str:
-    scheme = urllib.parse.urlparse(str(url).strip()).scheme.lower()
+    parsed = urllib.parse.urlparse(str(url).strip())
+    scheme = parsed.scheme.lower()
     if scheme not in ("http", "https"):
         return f"[ERROR] http_get only supports http:// and https:// URLs (got scheme '{scheme or 'none'}')."
+    if _is_metadata_host(parsed.hostname):
+        return "[ERROR] http_get refuses link-local addresses (169.254.0.0/16, fe80::/10)."
     try:
         req = urllib.request.Request(
             url, headers={"User-Agent": "Mozilla/5.0 (NewAgent Terminal Client)"}
         )
-        with urllib.request.urlopen(req, timeout=15) as res:
+        opener = urllib.request.build_opener(_HttpOnlyRedirects)
+        with opener.open(req, timeout=15) as res:
             data = res.read(65536)  # Cap at 64KB
             text = data.decode("utf-8", errors="replace")
             if len(data) == 65536:
@@ -1683,6 +1716,7 @@ _VALID_ACTION_TAGS = frozenset({
     "bejson_delete_field", "bejson_create_record", "bejson_delete_record",
     "bejson_set_value", "bejson_columns", "bejson_create", "context_set",
     "exec_bg", "task_status", "task_kill", "task_list", "job_task_done",
+    "agy_skill",
 })
 
 _TOOL_CALL_BLOCK_PATTERN = re.compile(
@@ -1946,6 +1980,20 @@ def _map_tool_call_to_action(
         attrs["id"] = _first_str(
             kw_args.get("id"), kw_args.get("task_id"),
             pos_args[0] if pos_args else None, raw_arg,
+        )
+    elif tag == "agy_skill":
+        if kw_args.get("name") or kw_args.get("skill") or (pos_args and pos_args[0]):
+            attrs["name"] = _first_str(kw_args.get("name"), kw_args.get("skill"), pos_args[0] if pos_args else None)
+        if kw_args.get("action") or kw_args.get("mode"):
+            attrs["action"] = _first_str(kw_args.get("action"), kw_args.get("mode"))
+        if kw_args.get("script"):
+            attrs["script"] = str(kw_args["script"])
+        if kw_args.get("filter"):
+            attrs["filter"] = str(kw_args["filter"])
+        content = _first_str(
+            kw_args.get("args"), kw_args.get("content"),
+            pos_args[1] if len(pos_args) > 1 else None,
+            raw_arg if not attrs else None,
         )
 
     return {"tag": tag, "attrs": attrs, "content": html.unescape(content.strip())}
@@ -2392,6 +2440,19 @@ async def run_action_queue(
                 if ok and "moved to jobs/complete" in msg:
                     ctx["_active_job_path"] = None
                     ctx["_active_job_doc"] = None
+
+        elif tag == "agy_skill":
+            import lib_bejson_newagent_agy_skills as agy_skills
+            skill_target = attrs.get("name") or attrs.get("action") or content or "list"
+            exec_res.source = str(skill_target)
+            if config.get("dryrun_mode") and (attrs.get("action") == "exec" or attrs.get("script")):
+                exec_res.output = f"[DRYRUN] Would execute agy_skill: {attrs} {content}"
+            else:
+                exit_code, skill_output = agy_skills.execute_agy_skill_action(
+                    attrs, content, cwd, config
+                )
+                exec_res.exit_code = exit_code
+                exec_res.output = skill_output
 
         ctx["stats"].execs += 1
         results.append(exec_res)

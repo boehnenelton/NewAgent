@@ -1,0 +1,39 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "ScriptConfig"
+  ],
+  "Fields": [
+    {
+      "name": "setting_name",
+      "type": "string"
+    },
+    {
+      "name": "setting_value",
+      "type": "string"
+    },
+    {
+      "name": "description",
+      "type": "string"
+    }
+  ],
+  "Values": [
+    [
+      "local_lib_directory",
+      "lib/",
+      "Relative path to local dep folder."
+    ],
+    [
+      "master_lib_source",
+      "$ADMIN_LIBRARIES",
+      "Fallback if local lib missing."
+    ],
+    [
+      "log_level",
+      "INFO",
+      "Default log level."
+    ]
+  ]
+}

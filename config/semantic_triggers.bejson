@@ -1,0 +1,116 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": [
+    "SemanticTrigger"
+  ],
+  "Fields": [
+    {
+      "name": "trigger_name",
+      "type": "string"
+    },
+    {
+      "name": "semantic_conditions",
+      "type": "string"
+    },
+    {
+      "name": "negative_conditions",
+      "type": "string"
+    },
+    {
+      "name": "triggered_action",
+      "type": "string"
+    },
+    {
+      "name": "cooldown_seconds",
+      "type": "integer"
+    },
+    {
+      "name": "priority",
+      "type": "integer"
+    }
+  ],
+  "Values": [
+    [
+      "BEJSON 104 Validation",
+      "validate|validator|104 validate|schema check|verify bejson|104 schema",
+      "delete|remove|uninstall|html|behtml",
+      "skill:///data/data/com.termux/files/home/.gemini/config/skills/bejson-104-validator",
+      900,
+      1
+    ],
+    [
+      "BEHTML Design Preferences",
+      "behtml|html layout|design tokens|tri-color|becss|spatial layout|8-lane",
+      "delete|remove|uninstall|bejson crud|104 schema|terminal cli",
+      "skill:///data/data/com.termux/files/home/.gemini/config/skills/behtml-design-preferences",
+      600,
+      2
+    ],
+    [
+      "Anti-Fluff Auditor",
+      "fluff|marketing|buzzword|hype|audit label|purpose law|slogans|metaphor",
+      "create fluff|write marketing|generate slogan|bejson|behtml",
+      "skill:///data/data/com.termux/files/home/.gemini/config/skills/anti-fluff-auditor",
+      900,
+      1
+    ],
+    [
+      "BEJSON Schema Validation",
+      "validate bejson|schema validator|verify schema|bejson validate|format check",
+      "delete|remove|html|behtml|terminal",
+      "skill:///data/data/com.termux/files/home/.gemini/config/skills/bejson-schema-validator",
+      900,
+      2
+    ],
+    [
+      "Terminal CLI Design",
+      "terminal|cli design|tui|menu design|ansi|49-column|mobile portrait",
+      "html|web|behtml|flask|browser",
+      "skill:///data/data/com.termux/files/home/.gemini/config/skills/design-terminal-cli",
+      900,
+      2
+    ],
+    [
+      "BEJSON 104 Core CRUD",
+      "bejson|104|create bejson|read bejson|field map|104a|104db|bejson crud",
+      "105|uuid|delete format|html|behtml|terminal",
+      "skill:///data/data/com.termux/files/home/.gemini/config/skills/bejson-104-core",
+      900,
+      1
+    ],
+    [
+      "BEJSON 105 Core CRUD",
+      "105|105a|105db|uuid|integrity era|bejson 105",
+      "104|foundational|html|behtml|terminal",
+      "skill:///data/data/com.termux/files/home/.gemini/config/skills/bejson-105-core",
+      900,
+      1
+    ],
+    [
+      "MFDB Multi-File Database",
+      "mfdb|multi-file database|mfdb-132|entity table|manifest|mfdb core",
+      "single file|html|behtml|terminal|cli",
+      "skill:///data/data/com.termux/files/home/.gemini/config/skills/mfdb-104-core",
+      900,
+      2
+    ],
+    [
+      "Web Framework Architecture",
+      "flask|web app|routing|server|endpoint|web framework|client server",
+      "terminal|cli|tui|bejson crud|validate",
+      "skill:///data/data/com.termux/files/home/.gemini/config/skills/web-framework-architect",
+      900,
+      2
+    ],
+    [
+      "File Archive Coordinator",
+      "download|sweep|archive|duplicate|sort version|prune|clean downloads",
+      "bejson|html|behtml|terminal|flask",
+      "skill:///data/data/com.termux/files/home/.gemini/config/skills/file-archive-coordinator",
+      900,
+      3
+    ]
+  ]
+}

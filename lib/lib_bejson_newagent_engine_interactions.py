@@ -2,12 +2,24 @@
 Library:        lib_bejson_newagent_engine_interactions.py
 Family:         NewAgent
 Description:    Gemini Interactions API client with native function-calling loop.
-Version:        1.3.0
-Date:           2026-10-14
-Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  a4e10c77-628b-49ef-8cf0-381a1795db28
+Version:        1.5.0
+Date:           2026-10-30
+Author:         Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
+RELATIONAL_ID:  040618d8-0d53-42fb-ba5a-f23a1189f169
 
 CHANGELOG:
+- 1.5.0 (2026-10-30): Remediation of Audit Findings F-01 and F-02:
+  (1) Disambiguate daily project quota from standard free-tier 15-RPM quota rate limit
+  in HTTP 429 handler, enabling legitimate key rotation across key pool rather than
+  prematurely aborting on attempt 1.
+  (2) Added `prior_prev_id` session rollback on error during `run_turn()`, preventing
+  unrecoverable HTTP 400 session poisoning from mid-loop failures.
+  (3) Added `await asyncio.sleep(min(4.0, 1.0 * (attempt + 1)))` backoff delays to prevent
+  rapid-fire request storms across key retries.
+- 1.4.0 (2026-10-17): Track `turn_had_side_effects` across `run_turn()` whenever a mutating
+  tool (`exec_shell`, `write_file`, `edit_file`, `make_dir`, `delete_file`, `copy_file`,
+  `restore_file`) executes in non-dryrun mode so `agent.py` does not auto-retry a turn
+  after mid-turn filesystem/shell mutations.
 - 1.3.0 (2026-10-14): Differentiate project/model quota exhaustion from per-key
   rate limits in 429 handling. Avoids burning key pool and poisoning key cooldowns
   when an upstream model quota is reached.
@@ -58,6 +70,7 @@ CHANGELOG:
 """
 
 import asyncio
+import inspect
 import json
 import logging
 from typing import Any, Callable, Optional
@@ -65,12 +78,23 @@ from typing import Any, Callable, Optional
 import aiohttp
 from lib_bejson_newagent_actions import is_command_denylisted
 
-VERSION = "1.3.0"
+VERSION = "1.5.0"
+RELATIONAL_ID = "040618d8-0d53-42fb-ba5a-f23a1189f169"
 logger = logging.getLogger(__name__)
 
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/interactions"
 COOLDOWN_429 = 60
 COOLDOWN_AUTH = 86400
+
+MUTATING_TOOLS: set[str] = {
+    "exec_shell",
+    "write_file",
+    "edit_file",
+    "make_dir",
+    "delete_file",
+    "copy_file",
+    "restore_file",
+}
 
 def build_tool_declarations(do_map: dict[str, Callable], scope: str = "all") -> list[dict]:
     SHELL_TOOLS = {"exec_shell", "env_get"}
@@ -311,9 +335,11 @@ class InteractionsPrompter:
         self.max_rounds = max_rounds
         self.timeout = aiohttp.ClientTimeout(total=timeout)
         self._prev_id: Optional[str] = None
+        self.turn_had_side_effects: bool = False
 
     def reset_session(self) -> None:
         self._prev_id = None
+        self.turn_had_side_effects = False
 
     @property
     def previous_interaction_id(self) -> Optional[str]:
@@ -326,68 +352,76 @@ class InteractionsPrompter:
         denylist: Optional[list[str]] = None,
         dryrun: bool = False,
     ) -> tuple[str, dict, list[dict]]:
-        tools = build_tool_declarations(self.do_map, self.tool_scope)
-        call_log: list[dict] = []
-        current_input: Any = user_input
-        last_data: dict = {}
-        total_usage: dict = {}
+        self.turn_had_side_effects = False
+        prior_prev_id = self._prev_id
+        try:
+            tools = build_tool_declarations(self.do_map, self.tool_scope)
+            call_log: list[dict] = []
+            current_input: Any = user_input
+            last_data: dict = {}
+            total_usage: dict = {}
 
-        for round_num in range(self.max_rounds):
-            data = await self._post(current_input, tools, system_instruction)
-            last_data = data
+            for round_num in range(self.max_rounds):
+                data = await self._post(current_input, tools, system_instruction)
+                last_data = data
 
-            usage = extract_usage(data)
-            for k, v in usage.items():
-                if isinstance(v, (int, float)):
-                    total_usage[k] = total_usage.get(k, 0) + v
-                else:
-                    total_usage[k] = v
+                usage = extract_usage(data)
+                for k, v in usage.items():
+                    if isinstance(v, (int, float)):
+                        total_usage[k] = total_usage.get(k, 0) + v
+                    else:
+                        total_usage[k] = v
 
-            fn_calls = [s for s in data.get("steps", []) if s.get("type") == "function_call"]
-            if not fn_calls:
-                break
+                fn_calls = [s for s in data.get("steps", []) if s.get("type") == "function_call"]
+                if not fn_calls:
+                    break
 
-            fn_results = []
-            for fc in fn_calls:
-                name = fc.get("name", "")
-                call_id = fc.get("id", "")
-                arguments = fc.get("arguments", {})
+                fn_results = []
+                for fc in fn_calls:
+                    name = fc.get("name", "")
+                    call_id = fc.get("id", "")
+                    arguments = fc.get("arguments", {})
 
-                result_text, ok = await self._execute_tool(
-                    name, arguments, denylist=denylist, dryrun=dryrun
+                    result_text, ok = await self._execute_tool(
+                        name, arguments, denylist=denylist, dryrun=dryrun
+                    )
+                    if name in MUTATING_TOOLS and not dryrun and ok:
+                        self.turn_had_side_effects = True
+                    call_log.append({
+                        "name": name, "args": arguments,
+                        "result": result_text, "ok": ok,
+                    })
+
+                    fn_results.append({
+                        "type": "function_result",
+                        "name": name,
+                        "call_id": call_id,
+                        "result": [{"type": "text", "text": result_text}],
+                    })
+
+                current_input = fn_results
+
+            # BUGFIX (2026-08-09): a blocked/failed generation (safety,
+            # prohibited_content, recitation, malformed_function_call, etc.)
+            # comes back as a normal HTTP 200 with status != "completed" and an
+            # "error" object -- there's no non-200 status to catch this at the
+            # _post() level. Previously this fell straight through to
+            # extract_text(), which finds no model_output step and silently
+            # returns "" -- the turn would just look like the model said
+            # nothing, with no indication anything went wrong at all.
+            status = last_data.get("status")
+            if status not in (None, "completed"):
+                err = last_data.get("error", {})
+                code = err.get("code", status) if isinstance(err, dict) else status
+                message = err.get("message", "") if isinstance(err, dict) else ""
+                raise RuntimeError(
+                    f"Interactions API returned status '{status}' ({code}) -- {message or 'no message provided'}"
                 )
-                call_log.append({
-                    "name": name, "args": arguments,
-                    "result": result_text, "ok": ok,
-                })
 
-                fn_results.append({
-                    "type": "function_result",
-                    "name": name,
-                    "call_id": call_id,
-                    "result": [{"type": "text", "text": result_text}],
-                })
-
-            current_input = fn_results
-
-        # BUGFIX (2026-08-09): a blocked/failed generation (safety,
-        # prohibited_content, recitation, malformed_function_call, etc.)
-        # comes back as a normal HTTP 200 with status != "completed" and an
-        # "error" object -- there's no non-200 status to catch this at the
-        # _post() level. Previously this fell straight through to
-        # extract_text(), which finds no model_output step and silently
-        # returns "" -- the turn would just look like the model said
-        # nothing, with no indication anything went wrong at all.
-        status = last_data.get("status")
-        if status not in (None, "completed"):
-            err = last_data.get("error", {})
-            code = err.get("code", status) if isinstance(err, dict) else status
-            message = err.get("message", "") if isinstance(err, dict) else ""
-            raise RuntimeError(
-                f"Interactions API returned status '{status}' ({code}) -- {message or 'no message provided'}"
-            )
-
-        return extract_text(last_data), total_usage, call_log
+            return extract_text(last_data), total_usage, call_log
+        except Exception:
+            self._prev_id = prior_prev_id
+            raise
 
     async def _post(self, inp: Any, tools: list[dict], si: str) -> dict:
         model = self.model_reg.active
@@ -477,23 +511,28 @@ class InteractionsPrompter:
                         detail = f"{code}: {message}" if code else (message or f"HTTP {resp.status}")
 
                         if resp.status == 429:
-                            if "quota" in detail.lower() or "exceeded a quota" in detail.lower():
+                            is_daily_limit = ("quota limit per day" in detail.lower() or
+                                              "daily_requests" in detail.lower())
+                            if is_daily_limit:
                                 raise RuntimeError(
-                                    f"Interactions API project quota exhausted for model '{model}': {detail}. "
+                                    f"Interactions API project daily quota exhausted for model '{model}': {detail}. "
                                     f"Switch to a different model (e.g. /model gemini-3.5-flash-lite)."
                                 )
                             self.key_reg.set_cooldown(key, COOLDOWN_429, status=resp.status, reason=detail)
                             last_error = f"Rate-limited (429) -- {detail}"
+                            await asyncio.sleep(min(4.0, 1.0 * (attempt + 1)))
                             continue
                         elif resp.status in (401, 403):
                             self.key_reg.set_cooldown(key, COOLDOWN_AUTH, status=resp.status, reason=detail)
                             last_error = f"Auth error ({resp.status}) -- {detail}"
+                            await asyncio.sleep(min(4.0, 1.0 * (attempt + 1)))
                             continue
                         elif 500 <= resp.status < 600:
                             # Transient, not this key's fault -- retry
                             # without penalizing the key at all.
                             last_error = f"Server error ({resp.status}) -- {detail}"
                             self.key_reg.record_failure(key, resp.status, detail)
+                            await asyncio.sleep(min(4.0, 1.0 * (attempt + 1)))
                             continue
                         else:
                             # Deterministic client-side error. Retrying with
@@ -576,7 +615,7 @@ class InteractionsPrompter:
             return f"[DRYRUN] Would call {name}({arguments})", True
 
         try:
-            if asyncio.iscoroutinefunction(fn):
+            if inspect.iscoroutinefunction(fn):
                 result = await fn(**arguments)
             else:
                 loop = asyncio.get_event_loop()

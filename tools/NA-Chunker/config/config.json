@@ -1,0 +1,16 @@
+{
+  "Format": "BEJSON",
+  "Format_Version": "104a",
+  "Format_Creator": "Elton Boehnen",
+  "Records_Type": ["ScriptConfig"],
+  "Fields": [
+    {"name": "setting_name", "type": "string"},
+    {"name": "setting_value", "type": "string"},
+    {"name": "description", "type": "string"}
+  ],
+  "Values": [
+    ["shared_lib_directory", "../../lib", "Relative path to NewAgent shared core BEJSON 104 libraries."],
+    ["lib_extensions_directory", "../../lib_extensions", "Relative path to NewAgent extended BEJSON 104 libraries for tools."],
+    ["log_level", "INFO", "Default log level."]
+  ]
+}

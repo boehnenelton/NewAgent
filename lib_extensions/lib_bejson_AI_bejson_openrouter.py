@@ -2,8 +2,8 @@
 Library:        lib_bejson_AI_bejson_openrouter.py
 Family:         AI
 Description:    Multi-model routing gateway for AI interactions.
-Version:        2.1.7
-Date:           2026-08-13
+Version:        3.2.0
+Date:           2026-09-07
 Author:         Elton Boehnen
 Contact:        eltonboehnen@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
 Format_Creator: Elton Boehnen
@@ -11,6 +11,64 @@ RELATIONAL_ID:  1f4c8b73-6d2a-4e91-9c5f-3a7d0e8b4c26
 Release_Version: 300
 
 Changelog:
+  3.2.0 (2026-09-28) -- Root-caused a round-robin-key-rotation bug found in this project's audit: get_standard_prompter() built a brand-new OpenRouterStandardPrompter (and therefore a brand-new KeyRegistry, its rotation _idx reset to 0) on every single dispatch, since ai_dispatch.py calls it fresh per call. Round-robin existed in the class but never actually advanced past key #1 in practice. Cached after first call instead, matching the singleton pattern lib_bejson_AI_bejson_gemini.py's get_standard_api() already used correctly.
+  3.1.0 (2026-09-07) -- Ported the flag/service schema migration from
+          libraries_104's copy of this file (that repo's 3.1.0/3.1.1,
+          2026-09-06) into this project, per Elton's confirmation. Appended
+          "flag" and "service" fields (string, default "") to the END of
+          both SCHEMA_KEY_REGISTRY and SCHEMA_MODEL_REGISTRY_OPENROUTER's
+          Fields arrays. Both unused for now: undeclared/empty means
+          "usable for anything, no restriction" -- flag for a future
+          paid-tier marker, service for future capability filtering (e.g.
+          "image"). Existing 5 model rows each gained two trailing ""
+          columns; refresh_from_live_api() updated to append the same two
+          trailing columns to the rows it builds from the live API, so a
+          live refresh doesn't drop back to 4-column rows.
+          OPENROUTER_CONFIG_VERSION bumped 2 -> 3. This project's own
+          on-disk openrouter_keys.104a.bejson (0 rows, no migration needed)
+          and openrouter_model_registry.104a.bejson were migrated in place
+          to match -- columns appended, Config_Version set to 3 directly.
+          Numbering note: this project's own history never had a 3.1.0
+          (it went 3.0.0 -> 3.0.1 -- see that entry), so 3.1.0 is used here
+          cleanly. libraries_104's copy of this same migration is at 3.1.1,
+          not 3.1.0, because that repo's 3.1.0 shipped with a regression
+          (env_var_max_slots/has_thinking silently dropped) that 3.1.1
+          fixed; this project's 3.0.1 never had that regression, so this
+          3.1.0 is equivalent in content to libraries_104's 3.1.1, not its
+          3.1.0. The two repos' version numbers for this file are not
+          expected to line up exactly given the diverged history -- what
+          matters is that each repo's own numbers are internally
+          consistent from here forward.
+  3.0.1 (2026-09-07) -- Process-only fix: these two behavioral changes were
+          already present in the file's code (found undocumented during a
+          library sync to libraries_104) but VERSION/Version/changelog
+          were never bumped for them, so 3.0.0 silently covered two
+          different behaviors. Documenting them here at the correct patch
+          level: (1) env_var_max_slots raised 2 -> 10 for the OpenRouter
+          key registry's env-var fallback scan. (2) refresh_from_live_api()
+          now derives thinking_enabled from the live API response
+          ("include_reasoning"/"reasoning" in supported_parameters, or a
+          truthy "reasoning" field) instead of hardcoding False for every
+          refreshed row. NOTE: libraries_104's own copy of this file has
+          since moved on to 3.1.0/3.1.1 (flag/service schema columns,
+          Config_Version 3) independently of this project's copy -- that
+          migration has NOT been ported here. 3.0.1 is used rather than
+          3.1.0 specifically to avoid colliding with that unrelated
+          content under the same version number across the two repos.
+  3.0.0 - REGISTRY OVERHAUL (same pass as groq.py 3.0.0, per Elton's
+          direct instruction). STD_KEY_PATH/STD_MODEL_PATH/STD_PROFILE_PATH
+          moved from {HOME}/.env/... and {ADMIN_ROOT}/data/schemas/... to
+          this library's own self-contained config/ subfolder
+          (get_self_contained_dir(__file__)). OpenRouterProfile removed;
+          now uses the shared BejsonProfileBase. Both registries pass
+          config_version=2 -- any on-disk file from before this delivery
+          has no Config_Version and is regenerated automatically. Note:
+          OpenRouterModelRegistry's stale-model exposure was already far
+          lower than Groq's, since refresh_from_live_api() (preserved
+          verbatim below) actively re-pulls the free model list rather
+          than trusting a static default forever -- this pass brings it
+          onto the same self-contained/versioned storage for consistency,
+          not because it had the identical silent-404 bug.
   2.1.7 - Modularization: OpenRouterKeyRegistry/OpenRouterModelRegistry now
           subclass lib_bejson_AI_ai_registry_base.py's shared atomic base
           (same migration done for Groq 2.1.6). refresh_from_live_api()
@@ -58,10 +116,12 @@ CORE_DIR = os.path.join(os.path.dirname(LIB_DIR), "Core")
 if CORE_DIR not in sys.path:
     sys.path.append(CORE_DIR)
 
-from lib_bejson_Core_bejson_env import resolve_path as resolve_system_path
+VERSION = "3.2.0"
 
-VERSION = "2.1.7"
-                    # constant to match it against; added per family policy
+# Config_Version for this provider's stores -- bump whenever a default
+# schema below changes; any on-disk file with no Config_Version, or one
+# older than this, is regenerated automatically. See ai_registry_base.py.
+OPENROUTER_CONFIG_VERSION = 3
 
 # --- EMBEDDED SCHEMAS ---
 SCHEMA_KEY_REGISTRY = {
@@ -72,7 +132,9 @@ SCHEMA_KEY_REGISTRY = {
     "Records_Type": ["ApiKey"],
     "Fields": [
         {"name": "key_slot", "type": "integer"},
-        {"name": "key", "type": "string"}
+        {"name": "key", "type": "string"},
+        {"name": "flag", "type": "string"},     # unused; e.g. "paid"
+        {"name": "service", "type": "string"},  # unused; e.g. "image"
     ],
     "Values": []
 }
@@ -87,14 +149,16 @@ SCHEMA_MODEL_REGISTRY_OPENROUTER = {
         {"name": "model_name", "type": "string"},
         {"name": "model_id", "type": "string"},
         {"name": "currently_active", "type": "boolean"},
-        {"name": "thinking_enabled", "type": "boolean"}
+        {"name": "thinking_enabled", "type": "boolean"},
+        {"name": "flag", "type": "string"},     # unused; e.g. "paid"
+        {"name": "service", "type": "string"},  # unused; e.g. "image"
     ],
     "Values": [
-        ["DeepSeek R1 (Free)", "deepseek/deepseek-r1:free", True, True],
-        ["Gemma 4 27B (Preview)", "google/gemma-4-27b-it", False, False],
-        ["Gemma 3 27B (Preview)", "google/gemma-3-27b-it", False, False],
-        ["Liquid LFM 2.5 Thinking", "liquid/lfm-2.5-1.2b-thinking:free", False, True],
-        ["Llama 3.3 70B", "meta-llama/llama-3.3-70b-instruct", False, False]
+        ["DeepSeek R1 (Free)", "deepseek/deepseek-r1:free", True, True, "", ""],
+        ["Gemma 4 27B (Preview)", "google/gemma-4-27b-it", False, False, "", ""],
+        ["Gemma 3 27B (Preview)", "google/gemma-3-27b-it", False, False, "", ""],
+        ["Liquid LFM 2.5 Thinking", "liquid/lfm-2.5-1.2b-thinking:free", False, True, "", ""],
+        ["Llama 3.3 70B", "meta-llama/llama-3.3-70b-instruct", False, False, "", ""]
     ]
 }
 
@@ -162,7 +226,16 @@ from lib_bejson_Core_bejson_core import (
     bejson_core_get_field_map, 
     bejson_core_atomic_write
 )
-from lib_bejson_AI_ai_registry_base import RoundRobinKeyRegistry, ModelRegistryBase
+from lib_bejson_AI_ai_registry_base import (
+    RoundRobinKeyRegistry,
+    ModelRegistryBase,
+    BejsonProfileBase,
+    get_self_contained_dir,
+)
+
+# Self-contained storage: this library's own config/ subfolder, no
+# external ADMIN_ROOT/HOME dependency.
+CONFIG_DIR = get_self_contained_dir(__file__)
 
 # --- Legacy Fallback Constants ---
 _OR_MODEL_LEGACY   = {"model_name": 0, "model_id": 1, "currently_active": 2, "thinking_enabled": 3}
@@ -178,23 +251,25 @@ _OR_PROFILE_LEGACY = {"SystemInstruction": 4}
 class OpenRouterKeyRegistry(RoundRobinKeyRegistry):
     def __init__(self, file_path: str):
         super().__init__(
-            resolve_system_path(file_path),
+            file_path,
             placeholder_markers=["YOUR_OPENROUTER_KEY", "KEY_HERE"],
             env_var_prefix="OPENROUTER_KEY",
-            env_var_max_slots=2,
+            env_var_max_slots=10,
             default_schema=SCHEMA_KEY_REGISTRY,
+            config_version=OPENROUTER_CONFIG_VERSION,
         )
 
 
 class OpenRouterModelRegistry(ModelRegistryBase):
     def __init__(self, file_path: str):
         super().__init__(
-            resolve_system_path(file_path),
+            file_path,
             # NOTE (2026-08-10, carried forward): OpenRouter's free (":free"
             # suffix) lineup rotates constantly. This hardcoded default WILL
             # go stale; call refresh_from_live_api() when online.
             default_model_id="deepseek/deepseek-r1:free",
             default_rows_factory=lambda: SCHEMA_MODEL_REGISTRY_OPENROUTER,
+            config_version=OPENROUTER_CONFIG_VERSION,
         )
 
     def _extra_fields(self, row, fmap):
@@ -260,10 +335,18 @@ class OpenRouterModelRegistry(ModelRegistryBase):
         for m in free:
             model_id = m.get("id", "")
             name = m.get("name", model_id)
-            new_values.append([name, model_id, model_id == new_active, False])
+            supp = m.get("supported_parameters") or []
+            reasoning = m.get("reasoning")
+            has_thinking = ("include_reasoning" in supp or "reasoning" in supp or bool(reasoning))
+            # Trailing "", "" are the flag/service columns added to
+            # SCHEMA_MODEL_REGISTRY_OPENROUTER's Fields (2026-09-07) --
+            # appended here too so row length keeps matching Fields length
+            # (BEJSON positional integrity, §10.5).
+            new_values.append([name, model_id, model_id == new_active, has_thinking, "", ""])
 
         new_doc = copy.deepcopy(SCHEMA_MODEL_REGISTRY_OPENROUTER)
         new_doc["Values"] = new_values
+        new_doc["Config_Version"] = OPENROUTER_CONFIG_VERSION
         os.makedirs(self.file_path.parent, exist_ok=True)
         bejson_core_atomic_write(str(self.file_path), new_doc)
 
@@ -278,42 +361,13 @@ class OpenRouterModelRegistry(ModelRegistryBase):
             if m["id"] == target_id: return m
         return {"id": target_id, "thinking": False}
 
-class OpenRouterProfile:
+class OpenRouterProfile(BejsonProfileBase):
     def __init__(self, file_path: str):
-        self.file_path = Path(resolve_system_path(file_path))
-        self.instruction = ""
-        self.config = {}
-        if not self.file_path.exists():
-            self.create_default()
-        self.load()
-
-    def create_default(self):
-        os.makedirs(self.file_path.parent, exist_ok=True)
-        bejson_core_atomic_write(str(self.file_path), SCHEMA_AI_PROFILE)
-
-    def load(self):
-        try:
-            data = bejson_core_load_file(str(self.file_path))
-            fi = bejson_core_get_field_map(data)
-            # FIX (LIB-AI-M1): Values[0] was indexed with no explicit check
-            # that Values was non-empty. Functionally this already fell
-            # through to the except block below and a safe default (the
-            # exception path was never actually unguarded), but an empty
-            # profile produced a bare "IndexError: list index out of range"
-            # with no indication of what was actually wrong. Raising with a
-            # clear message here doesn't change behavior, just what ends up
-            # in the log when it happens.
-            values = data.get("Values") or []
-            if not values:
-                raise ValueError(f"Profile at {self.file_path} has no Values rows")
-
-            instr_idx = fi.get("SystemInstruction", _OR_PROFILE_LEGACY["SystemInstruction"])
-            self.instruction = values[0][instr_idx]
-            self.config = {f["name"]: values[0][i] for i, f in enumerate(data["Fields"])}
-        except Exception as e:
-            logging.warning(f"[OR_Lib] Failed to load profile {self.file_path}, using defaults: {e}")
-            self.instruction = SCHEMA_AI_PROFILE["Values"][0][4]
-            self.config = {f["name"]: SCHEMA_AI_PROFILE["Values"][0][i] for i, f in enumerate(SCHEMA_AI_PROFILE["Fields"])}
+        super().__init__(
+            file_path,
+            schema_factory=lambda: SCHEMA_AI_PROFILE,
+            config_version=OPENROUTER_CONFIG_VERSION,
+        )
 
 # --- Unified Prompter Engine ---
 class OpenRouterStandardPrompter:
@@ -380,10 +434,21 @@ class OpenRouterStandardPrompter:
         except Exception as e:
             return {"content": f"ERROR: {str(e)}", "thought": ""}
 
-# --- Global Standard Paths ---
-STD_KEY_PATH = resolve_system_path("{HOME}/.env/openrouter_keys.bejson")
-STD_MODEL_PATH = resolve_system_path("{ADMIN_ROOT}/data/schemas/openrouter_model_registry.104a.bejson")
-STD_PROFILE_PATH = resolve_system_path("{ADMIN_ROOT}/data/schemas/openrouter_standard_profile.bejson")
+# --- Global Standard Paths: self-contained, inside this library's own
+# config/ folder -- no more {HOME}/.env/... or {ADMIN_ROOT}/... dependency.
+STD_KEY_PATH = CONFIG_DIR / "openrouter_keys.104a.bejson"
+STD_MODEL_PATH = CONFIG_DIR / "openrouter_model_registry.104a.bejson"
+STD_PROFILE_PATH = CONFIG_DIR / "openrouter_standard_profile.bejson"
+
+_std_prompter_singleton = None
+
 
 def get_standard_prompter():
-    return OpenRouterStandardPrompter(STD_KEY_PATH, STD_MODEL_PATH, STD_PROFILE_PATH)
+    """Zero-config OpenRouterStandardPrompter, cached after first call --
+    see lib_bejson_AI_bejson_groq.py's get_standard_prompter() for why
+    this caching is the actual round-robin-key-rotation fix, not just an
+    optimization."""
+    global _std_prompter_singleton
+    if _std_prompter_singleton is None:
+        _std_prompter_singleton = OpenRouterStandardPrompter(STD_KEY_PATH, STD_MODEL_PATH, STD_PROFILE_PATH)
+    return _std_prompter_singleton

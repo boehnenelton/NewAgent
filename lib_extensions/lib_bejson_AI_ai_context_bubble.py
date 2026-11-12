@@ -38,7 +38,6 @@ Date:           2026-08-13
 Author:         Elton Boehnen
 Contact:        boehnenelton2024@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
 RELATIONAL_ID:  f1a2b3c4-d5e6-4708-9a0b-1c2d3e4f5061
-Release_Version: 300
 
 Changelog:
   1.0.0 (2026-08-12) -- Initial creation. Provider-agnostic generalisation

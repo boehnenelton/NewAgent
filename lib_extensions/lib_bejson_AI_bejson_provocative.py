@@ -1,33 +1,14 @@
 """
-Library:        lib_bejson_AI_bejson_provocative.py
-Family:         AI
-Description:    Provocative (inference.provocative.earth) provider wrapper.
-                 OpenAI-compatible per their own docs ("same OpenAI SDK,
-                 zero other changes") -- thin config on top of
-                 lib_bejson_AI_ai_openai_compatible_base.py, same pattern
-                 as HuggingFace.
-
-                 Beta model as of this file's creation: qwen3.6-35b (MoE,
-                 35B/3B active, 262k context, thinking off by default --
-                 pass chat_template_kwargs={"enable_thinking": True/False}
-                 to control it, which flows through **config below).
-
-                 Key handling: the confirmed live env var for this provider
-                 is the single var "ProvocativeAI" (found in Elton's secure
-                 env store, not a numbered-slot convention like Gemini/Groq/
-                 OpenRouter). No key was hardcoded into this file despite
-                 one being visible in the source docs upload -- it belongs
-                 in the env var or the BEJSON key file, filled in by Elton.
-Version:        1.0.0
-Date:           2026-08-13
-Author:         Elton Boehnen
-Contact:        eltonboehnen@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
-Format_Creator: Elton Boehnen
-RELATIONAL_ID:  f5a49cd0-afd7-4032-b49d-e1df708cd641
+Library:         lib_bejson_AI_bejson_provocative.py
+Family:          AI
+Module Purpose:  Implements runtime functionality and logic for lib_bejson_AI_bejson_provocative.py.
+Architecture:    BEJSON 104 Ecosystem Component maintaining strict schema integrity, field map caching, and standardized runtime contracts.
+Version:         1.0.0
 Release_Version: 300
-
-Changelog:
-  1.0.0 (2026-08-13) -- Initial creation.
+Date:            2026-08-13
+Author:          Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
+Format_Creator:  Elton Boehnen
+RELATIONAL_ID:   f5a49cd0-afd7-4032-b49d-e1df708cd641
 """
 
 import os

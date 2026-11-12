@@ -428,8 +428,10 @@ def index():
 
 
 if __name__ == "__main__":
+    import os
+    port = int(os.environ.get("JOBMAKER_PORT", 5055))
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     print(f"JobMaker v{VERSION} -- Elton Boehnen -- serving jobs/ at {JOBS_DIR}")
     print(f"[JobMaker] Auth token (send as X-Auth-Token header or ?token= param): {_web_token}")
-    print("[JobMaker] Listening on 127.0.0.1:5055 -- change host explicitly if you need this reachable beyond localhost, and understand what that exposes before you do.")
-    app.run(host="127.0.0.1", port=5055, debug=False)
+    print(f"[JobMaker] Listening on 127.0.0.1:{port} -- change host explicitly if you need this reachable beyond localhost, and understand what that exposes before you do.")
+    app.run(host="127.0.0.1", port=port, debug=False)

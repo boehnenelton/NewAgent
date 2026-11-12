@@ -33,7 +33,6 @@ Date:           2026-08-12
 Author:         Elton Boehnen
 Contact:        boehnenelton2024@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
 RELATIONAL_ID:  b2c3d4e5-f6a7-8901-bcde-f12345678901
-Release_Version: 300
 
 Changelog:
   1.0.0 (2026-08-12) -- Initial creation. Provider-agnostic extraction of

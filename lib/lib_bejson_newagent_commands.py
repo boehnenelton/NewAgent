@@ -65,7 +65,6 @@ CHANGELOG:
 """
 
 import asyncio
-import json
 import time
 from datetime import datetime
 from pathlib import Path
@@ -742,4 +741,135 @@ async def handle_slash_commands(raw: str, ctx: dict) -> tuple[bool, Optional[str
         context_bubble.seed_history_with_recap(ctx["history"], recap)
         return True, f"Rebirth complete -- recap ({len(recap)} chars) fed back into memory."
 
+    elif cmd == "/skills":
+        import lib_bejson_newagent_agy_skills as agy_skills
+        import lib_bejson_newagent_config as config_lib
+        sub_tokens = arg.strip().split(maxsplit=1) if arg.strip() else []
+        sub_cmd = sub_tokens[0].lower() if sub_tokens else "status"
+        sub_rest = sub_tokens[1].strip() if len(sub_tokens) > 1 else ""
+
+        if sub_cmd in ("on", "true", "enable"):
+            ctx["config"]["agy_skills_enabled"] = True
+            if ctx.get("_config_dir"):
+                config_lib.save_config(Path(ctx["_config_dir"]) / "config.json", ctx["config"])
+            discovered_map = agy_skills.discover_installed_agy_skills(ctx["config"], force_refresh=True)
+            return True, (
+                f"Antigravity (agy) skills compatibility layer ENABLED (agy_skills_enabled=true saved to config/config.json). "
+                f"Discovered {len(discovered_map)} installed skill(s)."
+            )
+        elif sub_cmd in ("off", "false", "disable"):
+            ctx["config"]["agy_skills_enabled"] = False
+            if ctx.get("_config_dir"):
+                config_lib.save_config(Path(ctx["_config_dir"]) / "config.json", ctx["config"])
+            return True, (
+                "Antigravity (agy) skills compatibility layer DISABLED (agy_skills_enabled=false saved to config/config.json)."
+            )
+        elif sub_cmd in ("info", "read"):
+            if not sub_rest:
+                return True, "Usage: /skills info <skill_name>"
+            _, detail_out = agy_skills.execute_agy_skill_action(
+                {"action": "read", "name": sub_rest}, "", ctx.get("_cwd", "."), ctx["config"]
+            )
+            return True, detail_out
+        elif sub_cmd == "list":
+            return True, agy_skills.format_agy_skills_status_report(ctx["config"], filter_query=sub_rest)
+        else:
+            filter_val = arg.strip() if sub_cmd not in ("status",) else sub_rest
+            return True, agy_skills.format_agy_skills_status_report(ctx["config"], filter_query=filter_val)
+
+    elif cmd == "/geminimd":
+        import lib_bejson_newagent_config as config_lib
+        sub_tokens = arg.strip().split(maxsplit=1) if arg.strip() else []
+        sub_cmd = sub_tokens[0].lower() if sub_tokens else "status"
+
+        if sub_cmd in ("on", "true", "enable"):
+            ctx["config"]["gemini_md_policy_enabled"] = True
+            if ctx.get("_config_dir"):
+                config_lib.save_config(Path(ctx["_config_dir"]) / "config.json", ctx["config"])
+            discovered_chain = context_bubble.discover_gemini_md_policy_files(
+                ctx.get("_cwd", "."), ctx["config"]
+            )
+            return True, (
+                f"GEMINI.md global + tree-walking persistent policy ENABLED "
+                f"(gemini_md_policy_enabled=true saved to config/config.json). "
+                f"Active chain: {len(discovered_chain)} file(s)."
+            )
+        elif sub_cmd in ("off", "false", "disable"):
+            ctx["config"]["gemini_md_policy_enabled"] = False
+            if ctx.get("_config_dir"):
+                config_lib.save_config(Path(ctx["_config_dir"]) / "config.json", ctx["config"])
+            return True, (
+                "GEMINI.md global + tree-walking persistent policy DISABLED "
+                "(gemini_md_policy_enabled=false saved to config/config.json)."
+            )
+        else:
+            return True, context_bubble.format_gemini_md_policy_status_report(
+                ctx.get("_cwd", "."), ctx["config"]
+            )
+
+    elif cmd == "/cfgmenu":
+        import lib_bejson_newagent_config_tui as config_tui
+
+        cfg_dir = Path(ctx["_config_dir"]) if ctx.get("_config_dir") else Path(__file__).resolve().parent.parent / "config"
+        proj_root = cfg_dir.parent
+        mgr = config_tui.NewAgentConfigManagerState(proj_root)
+        # Keep in-memory ctx["config"] synced with mgr's main_config
+        if isinstance(ctx.get("config"), dict):
+            mgr.store_values_map["main_config"].update(ctx["config"])
+
+        tokens = arg.strip().split(maxsplit=2) if arg.strip() else []
+        if not tokens:
+            return True, "\n".join(config_tui.render_root_dashboard_lines(mgr))
+
+        sub_action = tokens[0].lower()
+        if sub_action == "validate":
+            return True, "\n".join(config_tui.render_validation_and_probe_lines(mgr, mode="validate"))
+        if sub_action == "probe":
+            return True, "\n".join(config_tui.render_validation_and_probe_lines(mgr, mode="probe"))
+        if sub_action == "about":
+            return True, "\n".join(config_tui.render_about_screen_lines())
+        if sub_action == "toggle" and len(tokens) >= 2:
+            target_key = tokens[1].strip()
+            ok, msg = mgr.toggle_or_cycle_option(target_key)
+            if ok and isinstance(ctx.get("config"), dict):
+                ctx["config"].update(mgr.store_values_map["main_config"])
+            return True, f"Toggle {target_key}: {msg} -> {mgr.get_option_value(target_key) if ok else 'ERR'}"
+        if sub_action == "reset" and len(tokens) >= 2:
+            target_key = tokens[1].strip()
+            ok, msg = mgr.reset_single_option(target_key)
+            if ok and isinstance(ctx.get("config"), dict):
+                ctx["config"].update(mgr.store_values_map["main_config"])
+            return True, f"Reset {target_key}: {msg} -> {mgr.get_option_value(target_key) if ok else 'ERR'}"
+        if sub_action == "set" and len(tokens) >= 3:
+            target_key = tokens[1].strip()
+            raw_val = tokens[2].strip()
+            ok, msg = mgr.set_option_value(target_key, raw_val)
+            if ok and isinstance(ctx.get("config"), dict):
+                ctx["config"].update(mgr.store_values_map["main_config"])
+            return True, f"Set {target_key}: {msg} -> {mgr.get_option_value(target_key) if ok else 'ERR'}"
+        if sub_action == "get" and len(tokens) >= 2:
+            target_key = tokens[1].strip()
+            if target_key in mgr.option_metadata_registry:
+                opt_meta = mgr.option_metadata_registry[target_key]
+                for cat_desc in mgr.categories_list:
+                    if cat_desc.category_short_code == opt_meta.category_short_code:
+                        r_idx = cat_desc.option_keys_order.index(target_key) + 1
+                        return True, "\n".join(config_tui.render_option_inspector_lines(mgr, cat_desc, r_idx))
+            return True, f"Unknown configuration key: {target_key}"
+
+        # Match category index (1-7) or code (ENG, AUT, MEM, EXT, SYS, BUB, CLI)
+        for cat_desc in mgr.categories_list:
+            if (
+                sub_action == str(cat_desc.category_index_number)
+                or sub_action == f"{cat_desc.category_index_number:02d}"
+                or sub_action.upper() == cat_desc.category_short_code
+            ):
+                return True, "\n".join(config_tui.render_category_submenu_lines(mgr, cat_desc))
+
+        # Otherwise search options
+        matches = mgr.search_options(arg.strip())
+        return True, "\n".join(config_tui.render_search_results_lines(mgr, arg.strip(), matches))
+
     return False, None
+
+

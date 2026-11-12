@@ -1,6 +1,13 @@
 """
 Library:        lib_bejson_newagent_subagent_runtime.py
 Family:         NewAgent (subagent family)
+Version:        1.1.0
+Date:           2026-09-29
+Author:         Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
+Contact:        boehnenelton2024@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
+Format_Creator: Elton Boehnen
+RELATIONAL_ID:  3789aa6f-e6a8-42de-93e8-ce397ac1783b
+Release_Version: 300
 Description:    Turns a durable subagent_sessions.py record into an actual
                 running turn: builds history + system prompt from the
                 session's profile (subagent_profiles.py), calls the real
@@ -55,12 +62,6 @@ Description:    Turns a durable subagent_sessions.py record into an actual
                 subagent_sessions.update_session(..., status=
                 STATUS_WAITING_SIGNAL, awaiting_signal_types=[...]) 
                 directly between calls to run_subagent_turn.
-Version:        1.1.0
-Date:           2026-09-29
-Author:         Elton Boehnen — eltonboehnen@gmail.com
-Contact:        eltonboehnen@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
-Format_Creator: Elton Boehnen
-RELATIONAL_ID:  3789aa6f-e6a8-42de-93e8-ce397ac1783b
 
 CHANGELOG:
 - 1.1.0 (2026-09-29): Remediation pass, audit finding #7. Moved the

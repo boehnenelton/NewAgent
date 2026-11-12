@@ -22,7 +22,6 @@ Author:         Elton Boehnen
 Contact:        boehnenelton2024@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
 Format_Creator: Elton Boehnen
 RELATIONAL_ID:  22b377fc-fd6e-4187-a9e6-8199003bef4a
-Release_Version: 300
 
 Changelog:
   1.0.0 (2026-08-13) -- Initial creation.

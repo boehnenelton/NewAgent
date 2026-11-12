@@ -1,11 +1,12 @@
 """
 Library:        lib_bejson_AI_ai_dispatch.py
 Family:         AI
-Description:    The common call interface across the AI family's four
-                 providers -- Groq, OpenRouter, Gemini (bejson_gemini.py),
-                 and GenAI (bejson_genai.py). One function, one call
-                 signature, one return shape (AIResponse, see
-                 lib_bejson_AI_ai_response.py), regardless of provider.
+Description:    The common call interface across the AI family's providers
+                 -- Groq, OpenRouter, Grok (bejson_grok.py), Gemini
+                 (bejson_gemini.py), GenAI (bejson_genai.py), and Hugging
+                 Face. One function, one call signature, one return shape
+                 (AIResponse, see lib_bejson_AI_ai_response.py), regardless
+                 of provider.
 
                  Design decision made explicit here rather than guessed:
                  this file does NOT rewrite groq.py / openrouter.py /
@@ -28,17 +29,52 @@ Description:    The common call interface across the AI family's four
                  model rejected) -- those come back as
                  AIResponse(success=False, error=...). It only raises for
                  programmer error (unknown provider name).
-Version:        1.1.0
-Date:           2026-08-13
+Version:        1.7.0
+Date:           2026-10-12
 Author:         Elton Boehnen
 Contact:        boehnenelton2024@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
 Format_Creator: Elton Boehnen
-RELATIONAL_ID:  01571434-3fe5-4406-b8eb-c3c05ba0d780
-Release_Version: 300
+RELATIONAL_ID:  9c4a1e7f-3d8b-4a2c-9e6f-1b5d0a8c4f37
 
 Changelog:
-  1.1.0 (2026-08-13) -- Added huggingface/provocative adapters (both via
-        the new lib_bejson_AI_ai_openai_compatible_base.py shared client).
+  1.7.0 (2026-10-12) -- Added provider "ollamalocal" (local Ollama server via
+        lib_bejson_AI_bejson_ollamalocal.py; no API key). Purely additive:
+        PROVIDERS, _ADAPTERS, and new _adapt_ollamalocal. The existing
+        "ollama" (Ollama Cloud) adapter is untouched. temperature,
+        max_tokens and num_ctx are passed through; other config keys are
+        reported in unsupported_params.
+  1.6.0 (2026-09-22) -- NOTE: header Version was at 1.3.0 while the
+        VERSION constant further down was already at 1.5.0 -- pre-existing
+        drift, bumped both to 1.6.0 per the same policy applied to
+        menu_cli's drift earlier this session. Added "geminirest" to
+        PROVIDERS and _ADAPTERS (_adapt_geminirest -- the same pattern as
+        _adapt_gemini, backed by the new lib_bejson_AI_bejson_geminirest.py).
+  1.3.0 (2026-08-21) -- Removed provider "provocative" (Provocative AI /
+        qwen3.6-35b) at Elton's request -- PROVIDERS/_ADAPTERS/
+        _adapt_provocative all removed; lib_bejson_AI_bejson_provocative.py
+        and provocative_cli/ deleted entirely. Added seventh (now sixth)
+        provider "grok" (lib_bejson_AI_bejson_grok.py, xAI's Grok via its
+        OpenAI-compatible /v1/chat/completions endpoint). _adapt_grok
+        follows _adapt_provocative's prior pattern: honors a per-call
+        system_instruction natively (plain OpenAI-compatible chat
+        completions, no fixed on-disk-profile requirement), unlike Groq/
+        OpenRouter. Purely additive/subtractive otherwise: _adapt_groq/
+        _adapt_openrouter/_adapt_gemini/_adapt_genai/_adapt_huggingface
+        untouched.
+  1.2.0 (2026-08-16) -- Added sixth provider "huggingface"
+        (lib_bejson_AI_bejson_huggingface.py, Hugging Face Inference
+        Providers OpenAI-compatible router). Purely additive:
+        _adapt_groq/_adapt_openrouter/_adapt_gemini/_adapt_genai/
+        _adapt_provocative untouched.
+  1.1.0 (2026-08-15) -- Added fifth provider "provocative"
+        (lib_bejson_AI_bejson_provocative.py, OpenAI-compatible
+        qwen3.6-35b endpoint) to PROVIDERS and _ADAPTERS. Purely additive:
+        _adapt_groq/_adapt_openrouter/_adapt_gemini/_adapt_genai untouched.
+        Unlike Groq/OpenRouter, Provocative's adapter honors a per-call
+        system_instruction natively instead of reporting it unsupported,
+        since the endpoint is plain OpenAI-compatible chat completions with
+        no fixed on-disk profile requirement. Also passes through an
+        enable_thinking config knob (Qwen's chat_template_kwargs toggle).
   1.0.0 (2026-08-13) -- Initial creation.
 """
 
@@ -49,9 +85,50 @@ from lib_bejson_AI_ai_response import AIResponse, ai_response_ok, ai_response_er
 
 logger = logging.getLogger("lib_bejson_AI_ai_dispatch")
 
-VERSION = "1.1.0"
+VERSION = "1.7.0"
 
-PROVIDERS = ("groq", "openrouter", "gemini", "genai", "huggingface", "provocative")
+PROVIDERS = ("groq", "openrouter", "gemini", "geminirest", "genai", "grok", "huggingface", "openai", "tokenrouter", "ollama", "ollamalocal")
+
+
+# ── TokenRouter (bejson_tokenrouter.py) ───────────────────────────────────
+
+def _adapt_tokenrouter(user_input: str, model_id: Optional[str], system_instruction: Optional[str], **config) -> AIResponse:
+    from lib_bejson_AI_bejson_tokenrouter import get_standard_prompter
+
+    unsupported = []
+    if config:
+        unsupported.append("config:" + ",".join(sorted(config.keys())))
+
+    prompter = get_standard_prompter()
+    result = prompter.prompt(user_input, model_id, system_instruction=system_instruction)  # always returns a str
+    used_model = model_id or prompter.model_reg.active_model_id
+
+    if isinstance(result, str) and result.startswith("ERROR:"):
+        return ai_response_error(result, provider="tokenrouter", model_id=used_model,
+                                  unsupported_params=unsupported, raw=result)
+    return ai_response_ok(result, provider="tokenrouter", model_id=used_model,
+                           unsupported_params=unsupported, raw=result)
+
+
+# ── OpenAI (bejson_openai.py) ─────────────────────────────────────────────
+
+def _adapt_openai(user_input: str, model_id: Optional[str], system_instruction: Optional[str], **config) -> AIResponse:
+    from lib_bejson_AI_bejson_openai import get_standard_prompter
+
+    unsupported = []
+    if config:
+        unsupported.append("config:" + ",".join(sorted(config.keys())))
+
+    prompter = get_standard_prompter()
+    result = prompter.prompt(user_input, model_id, system_instruction=system_instruction)  # always returns a str
+    used_model = model_id or prompter.model_reg.active_model_id
+
+    if isinstance(result, str) and result.startswith("ERROR:"):
+        return ai_response_error(result, provider="openai", model_id=used_model,
+                                  unsupported_params=unsupported, raw=result)
+    return ai_response_ok(result, provider="openai", model_id=used_model,
+                           unsupported_params=unsupported, raw=result)
+
 
 
 # ── Groq ───────────────────────────────────────────────────────────────────
@@ -106,6 +183,48 @@ def _adapt_openrouter(user_input: str, model_id: Optional[str], system_instructi
                            unsupported_params=unsupported, raw=result)
 
 
+# ── Hugging Face (bejson_huggingface.py) ────────────────────────────────────
+
+def _adapt_huggingface(user_input: str, model_id: Optional[str], system_instruction: Optional[str], **config) -> AIResponse:
+    from lib_bejson_AI_bejson_huggingface import get_standard_prompter
+
+    unsupported = []
+    if config:
+        unsupported.append("config:" + ",".join(sorted(config.keys())))
+
+    prompter = get_standard_prompter()
+    result = prompter.prompt(user_input, model_id, system_instruction=system_instruction)  # {"content", "thought"}
+    used_model = model_id or prompter.model_reg.active_model_id
+    content = result.get("content", "")
+
+    if content.startswith("ERROR:"):
+        return ai_response_error(content, provider="huggingface", model_id=used_model,
+                                  unsupported_params=unsupported, raw=result)
+    return ai_response_ok(content, provider="huggingface", model_id=used_model,
+                           thought=result.get("thought", ""),
+                           unsupported_params=unsupported, raw=result)
+
+
+# ── Grok (bejson_grok.py) ────────────────────────────────────────────────
+
+def _adapt_grok(user_input: str, model_id: Optional[str], system_instruction: Optional[str], **config) -> AIResponse:
+    from lib_bejson_AI_bejson_grok import get_standard_prompter
+
+    unsupported = []
+    if config:
+        unsupported.append("config:" + ",".join(sorted(config.keys())))
+
+    prompter = get_standard_prompter()
+    result = prompter.prompt(user_input, model_id, system_instruction=system_instruction)  # always returns a str
+    used_model = model_id or prompter.model_reg.active_model_id
+
+    if isinstance(result, str) and result.startswith("ERROR:"):
+        return ai_response_error(result, provider="grok", model_id=used_model,
+                                  unsupported_params=unsupported, raw=result)
+    return ai_response_ok(result, provider="grok", model_id=used_model,
+                           unsupported_params=unsupported, raw=result)
+
+
 # ── Gemini (bejson_gemini.py / GeminiAPI) ───────────────────────────────────
 
 def _adapt_gemini(user_input: str, model_id: Optional[str], system_instruction: Optional[str], **config) -> AIResponse:
@@ -125,6 +244,26 @@ def _adapt_gemini(user_input: str, model_id: Optional[str], system_instruction: 
         return ai_response_ok(content, provider="gemini", model_id=used_model, raw=content)
     except Exception as e:
         return ai_response_error(str(e), provider="gemini", model_id=used_model, raw=e)
+
+
+# ── Gemini REST (bejson_geminirest.py) ───────────────────────────────────
+
+def _adapt_geminirest(user_input: str, model_id: Optional[str], system_instruction: Optional[str], **config) -> AIResponse:
+    from lib_bejson_AI_bejson_geminirest import get_standard_prompter
+
+    unsupported = []
+    if config:
+        unsupported.append("config:" + ",".join(sorted(config.keys())))
+
+    prompter = get_standard_prompter()
+    result = prompter.prompt(user_input, model_id, system_instruction=system_instruction)  # always returns a str
+    used_model = model_id or prompter.model_reg.active_model_id
+
+    if isinstance(result, str) and result.startswith("ERROR:"):
+        return ai_response_error(result, provider="geminirest", model_id=used_model,
+                                  unsupported_params=unsupported, raw=result)
+    return ai_response_ok(result, provider="geminirest", model_id=used_model,
+                           unsupported_params=unsupported, raw=result)
 
 
 # ── GenAI (bejson_genai.py / GeminiStandardPrompter) ────────────────────────
@@ -158,39 +297,58 @@ def _adapt_genai(user_input: str, model_id: Optional[str], system_instruction: O
                            unsupported_params=unsupported, raw=result)
 
 
-# ── HuggingFace ──────────────────────────────────────────────────────────
+# ── Ollama Cloud (bejson_ollama.py) ───────────────────────────────────────
 
-def _adapt_huggingface(user_input: str, model_id: Optional[str], system_instruction: Optional[str], **config) -> AIResponse:
-    import lib_bejson_AI_bejson_huggingface as hf
+def _adapt_ollama(user_input: str, model_id: Optional[str], system_instruction: Optional[str], **config) -> AIResponse:
+    from lib_bejson_AI_bejson_ollama import get_standard_prompter
 
-    used_model = model_id or hf.DEFAULT_MODEL
-    try:
-        content = hf.prompt(user_input, model_id, system_instruction=system_instruction, **config)
-        return ai_response_ok(content, provider="huggingface", model_id=used_model, raw=content)
-    except Exception as e:
-        return ai_response_error(str(e), provider="huggingface", model_id=used_model, raw=e)
+    unsupported = []
+    if config:
+        unsupported.append("config:" + ",".join(sorted(config.keys())))
+
+    prompter = get_standard_prompter()
+    result = prompter.prompt(user_input, model_id, system_instruction=system_instruction)  # always returns a str
+    used_model = model_id or prompter.model_reg.active_model_id
+
+    if isinstance(result, str) and result.startswith("ERROR:"):
+        return ai_response_error(result, provider="ollama", model_id=used_model,
+                                  unsupported_params=unsupported, raw=result)
+    return ai_response_ok(result, provider="ollama", model_id=used_model,
+                           unsupported_params=unsupported, raw=result)
 
 
-# ── Provocative ──────────────────────────────────────────────────────────
+# ── Ollama Local (bejson_ollamalocal.py) ──────────────────────────────────
 
-def _adapt_provocative(user_input: str, model_id: Optional[str], system_instruction: Optional[str], **config) -> AIResponse:
-    import lib_bejson_AI_bejson_provocative as prov
+def _adapt_ollamalocal(user_input: str, model_id: Optional[str], system_instruction: Optional[str], **config) -> AIResponse:
+    from lib_bejson_AI_bejson_ollamalocal import get_standard_prompter
 
-    used_model = model_id or prov.DEFAULT_MODEL
-    try:
-        content = prov.prompt(user_input, model_id, system_instruction=system_instruction, **config)
-        return ai_response_ok(content, provider="provocative", model_id=used_model, raw=content)
-    except Exception as e:
-        return ai_response_error(str(e), provider="provocative", model_id=used_model, raw=e)
+    passthrough = {k: v for k, v in config.items() if k in ("temperature", "max_tokens", "num_ctx")}
+    extra = sorted(set(config) - set(passthrough))
+    unsupported = ["config:" + ",".join(extra)] if extra else []
+
+    prompter = get_standard_prompter()
+    result = prompter.prompt(user_input, model_id, system_instruction=system_instruction, **passthrough)  # always returns a str
+    used_model = model_id or prompter.model_reg.active_model_id
+
+    if isinstance(result, str) and result.startswith("ERROR:"):
+        return ai_response_error(result, provider="ollamalocal", model_id=used_model,
+                                  unsupported_params=unsupported, raw=result)
+    return ai_response_ok(result, provider="ollamalocal", model_id=used_model,
+                           unsupported_params=unsupported, raw=result)
 
 
 _ADAPTERS = {
     "groq": _adapt_groq,
     "openrouter": _adapt_openrouter,
     "gemini": _adapt_gemini,
+    "geminirest": _adapt_geminirest,
     "genai": _adapt_genai,
+    "grok": _adapt_grok,
     "huggingface": _adapt_huggingface,
-    "provocative": _adapt_provocative,
+    "openai": _adapt_openai,
+    "tokenrouter": _adapt_tokenrouter,
+    "ollama": _adapt_ollama,
+    "ollamalocal": _adapt_ollamalocal,
 }
 
 
@@ -205,7 +363,7 @@ def ai_dispatch_call(
     """
     The one call interface for all four AI-family providers.
 
-    provider            -- "groq" | "openrouter" | "gemini" | "genai".
+    provider            -- "groq" | "openrouter" | "gemini" | "genai" | "grok" | "huggingface".
     user_input          -- The prompt text.
     model_id            -- Optional model override; falls back to each
                            provider's own active/default model if omitted.

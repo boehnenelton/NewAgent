@@ -5,12 +5,15 @@ Description:    REST API prompter with rotating key and cooldown registry.
                 Key/model/cooldown registries routed through the canonical
                 Core BEJSON library (atomic write + validation + field-map
                 access) instead of hand-rolled json.load/dump.
-Version:        1.25.0
-Date:           2026-10-16
-Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  948782db-99dc-41e4-b89e-42266c1572c9
+Version:        1.26.0
+Date:           2026-10-17
+Author:         Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
+RELATIONAL_ID:  2b8d5e19-4c7a-4f3b-9e6d-8a1c3f7b5d92
 
 CHANGELOG:
+- 1.26.0 (2026-10-17): Policy §7.3 remediation — removed redundant `print()` in
+  `sync_keys_from_env_sources()` (`logger.warning` already logs to stderr and `agent.py`
+  records the full diagnostic into the session transcript).
 - 1.25.0 (2026-10-16): Key caches (config/keys*.bejson) no longer hold plaintext secrets. Rows store
   "ENV:<var_name>"; real values are resolved from secureenv_file.json on every load and live in memory only.
   Legacy plaintext caches are rewritten on first load (scrub_key_file). Rotated keys (value no longer matches
@@ -183,10 +186,9 @@ import random
 import re
 import uuid
 import time
-import subprocess
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -210,7 +212,8 @@ from lib_bejson_newagent_key_ledger import (
     key_ledger_short_hash,
 )
 
-VERSION = "1.25.0"
+VERSION = "1.26.0"
+RELATIONAL_ID = "2b8d5e19-4c7a-4f3b-9e6d-8a1c3f7b5d92"
 logger = logging.getLogger(__name__)
 
 COOLDOWN_429 = 60
@@ -1486,6 +1489,29 @@ class RestPrompter:
                     if key_registry:
                         key_registry.set_transient_cooldown(key, COOLDOWN_TRANSIENT, status=status, reason="server-side")
                     last_error = f"Server error ({status}) — not key-specific"
+                elif status == 404:
+                    # FIX 2026-10-25 (Elton Boehnen): 404 = the MODEL/provider
+                    # endpoint is missing (e.g. OpenRouter -> Nvidia "Function
+                    # ... Not found for account"), identical on every key.
+                    # It used to fall through to the 'unexpected' branch,
+                    # which counted it against each key and auto-deactivated
+                    # the entire rotation in under a second. No key penalty;
+                    # surface the provider detail and stop retrying.
+                    try:
+                        error_body = exc.read().decode("utf-8", errors="replace")
+                    except Exception:
+                        error_body = str(exc.reason)
+                    error_body = errors.redact_secrets(error_body)
+                    logger.error(
+                        "[Engine_REST] HTTP 404 for model '%s' (provider %s) -- model/endpoint "
+                        "unavailable, not a key problem. Switch models. Body: %s",
+                        model, provider, error_body[:300],
+                    )
+                    last_error = (
+                        f"Model '{model}' unavailable (HTTP 404, not key-specific) -- "
+                        f"switch models. Provider said: {error_body[:200]}"
+                    )
+                    break
                 else:
                     # Truly unexpected status -- cautious default: still
                     # penalize, since an unrecognized code could genuinely
@@ -1819,7 +1845,6 @@ def sync_keys_from_env_sources(
             diag = newagent_env.describe_env_sources(config)
             file_detail = " | ".join(per_file_diagnostics) if per_file_diagnostics else "(all resolved sources yielded keys=0 with no specific reason recorded)"
             detail = f"{diag} DETAIL: {file_detail}"
-            print(f"[EnvSync] Synced 0 keys. {detail}")
             logger.warning("[EnvSync] Synced 0 keys. %s", detail)
     return total_added, detail
 

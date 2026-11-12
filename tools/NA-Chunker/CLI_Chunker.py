@@ -10,11 +10,18 @@ Description:    BEJSON Project Chunker and Rebuilder.
                 Unchunk supports both schemas and can restore directly to a
                 zip file (--zip) instead of loose files on disk.
                 Overwrites the previous chunk for the same project — no version folders.
+                Contextualize Chunk: --context TEXT writes TEXT into the target
+                directory as "!-CONTEXT.txt" before chunking, so it sorts first
+                and is the first record chunked (built-in context for the archive).
+                Chunk-in-Target mode: when enabled (--chunk-in-target for one run,
+                or persisted via --toggle-chunk-in-target), the resulting chunk is
+                also copied into a "chunked5/" subdirectory inside the target. That
+                subdirectory is always excluded from chunking to avoid recursion.
                 STANDALONE BUILD: all lib_bejson_* dependency functions are embedded
                 directly in this file (see EMBEDDED LIBRARY CODE block below). No
                 /lib folder is required to run this script.
-Version:        2.5.1
-Date:           2026-07-13
+Version:        2.7.0
+Date:           2026-09-18
 Author:         Elton Boehnen
 Contact:        eltonboehnen@gmail.com | boehnenelton2024.pages.dev | github.com/boehnenelton
 RELATIONAL_ID:  af9c353f-63b4-4a86-ad06-009b858d5a9a
@@ -35,8 +42,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Union
 
+VERSION = "2.7.0"
+
 # ── Self-locate ────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent
+CONFIG_FILE = BASE_DIR / "config" / "config.json"
 
 # ════════════════════════════════════════════════════════════════════════════
 # BEGIN EMBEDDED LIBRARY CODE
@@ -55,25 +65,85 @@ BASE_DIR = Path(__file__).resolve().parent
 
 # ── lib_bejson_Core_bejson_env.py (v2.1.2) ─────────────────────────────────────
 
+def _load_json_or_bejson(file_path: Path) -> dict:
+    if not file_path.exists():
+        return {}
+    try:
+        data = json.loads(file_path.read_text(encoding="utf-8"))
+        return data
+    except Exception:
+        return {}
+
 def source_env(override_path: str = None) -> bool:
     """
-    Mandatory Environment Sourcing (Section 54).
-    Priority: 1. override_path, 2. ENV_FILE_PATH, 3. Android Storage, 4. Home
+    Mandatory Environment Sourcing (Section 4.5 / Section 11).
+    Loads environment variable definitions from paths.json and secureenv_file.json
+    as specified in config/config.json without hardcoding paths.
     """
-    env_path = override_path or os.environ.get("ENV_FILE_PATH")
-    search_paths = [
-        Path(env_path) if env_path else None,
-        Path("/storage/emulated/0/env_file.py"),
-        Path.home() / "env_file.py"
-    ]
-    for p in search_paths:
+    sourced = False
+    config_data = _load_json_or_bejson(CONFIG_FILE)
+    paths_env_file = None
+    secure_env_file = None
+
+    if config_data and "Values" in config_data:
+        fields = {f.get("name"): i for i, f in enumerate(config_data.get("Fields", []))}
+        name_idx = fields.get("setting_name", 0)
+        val_idx = fields.get("setting_value", 1)
+        for row in config_data.get("Values", []):
+            if len(row) > max(name_idx, val_idx):
+                if row[name_idx] == "paths_env_file":
+                    paths_env_file = str(row[val_idx])
+                elif row[name_idx] == "secure_env_file":
+                    secure_env_file = str(row[val_idx])
+
+    if override_path:
+        target_files = [Path(override_path)]
+    else:
+        target_files = [
+            Path(paths_env_file) if paths_env_file else Path("/storage/emulated/0/.env/user/paths.json"),
+            Path(secure_env_file) if secure_env_file else Path("/storage/emulated/0/.env/secure/secureenv_file.json")
+        ]
+
+    for p in target_files:
         if p and p.exists():
-            try:
-                exec(p.read_text(), globals())
-                return True
-            except Exception:
-                continue
-    return False
+            doc = _load_json_or_bejson(p)
+            if doc and "Values" in doc:
+                fields = {f.get("name"): i for i, f in enumerate(doc.get("Fields", []))}
+                name_idx = fields.get("var_name", 0)
+                val_idx = fields.get("var_value", 1)
+                for row in doc.get("Values", []):
+                    if len(row) > max(name_idx, val_idx):
+                        var_k = str(row[name_idx]).strip()
+                        var_v = str(row[val_idx]).strip()
+                        if var_k and var_k not in os.environ:
+                            os.environ[var_k] = var_v
+                sourced = True
+
+    if "INTERNAL_STORAGE" not in os.environ:
+        os.environ["INTERNAL_STORAGE"] = "/storage/emulated/0"
+    if "SD_CARD" not in os.environ:
+        os.environ["SD_CARD"] = "/storage/9C33-6BBD" if os.path.exists("/storage/9C33-6BBD") else "/storage/sdcard1"
+
+    return sourced
+
+def get_storage_roots():
+    source_env()
+    internal_path = os.environ.get("INTERNAL_STORAGE", "/storage/emulated/0")
+    if not os.path.exists(internal_path):
+        internal_path = "/storage/emulated/0"
+
+    sd_path = os.environ.get("SD_CARD", "/storage/9C33-6BBD")
+    if not os.path.exists(sd_path):
+        if os.path.exists("/storage/sdcard1"):
+            sd_path = "/storage/sdcard1"
+        else:
+            sd_path = "/storage/emulated/0"
+
+    return [
+        {"label": "Internal", "path": internal_path, "type": "internal", "enabled": True},
+        {"label": "SD", "path": sd_path, "type": "sd", "enabled": True}
+    ]
+
 
 def resolve_path(path_str: str) -> str:
     """
@@ -633,7 +703,19 @@ def bejson_validator_validate_file(file_path):
 # ── lib_bejson_Utility_bejson_utility.py (v2.3.2) ──────────────────────────────
 
 DEFAULT_EXTENSIONS = [".py", ".js", ".ts", ".html", ".css", ".md", ".json", ".sh", ".txt", ".bejson", ".tsx", ".jsx"]
-DEFAULT_EXCLUDES = [".git", "__pycache__", "node_modules", "lib", "output", ".mfdb_lock", "dist", "build"]
+
+# "chunked5" is CLI_Chunker's own Chunk-in-Target output directory (see
+# CHUNK_TARGET_DIRNAME below). It is always excluded from chunking so a
+# repeated chunk run never walks into its own previous output.
+CHUNK_TARGET_DIRNAME = "chunked5"
+
+# Contextualize Chunk: filename written into the target directory root before
+# chunking. The "!" prefix (ASCII 0x21) sorts before digits/letters, and
+# combined with the files.sort()/dirs.sort() determinism added to every walk
+# below, this guarantees it is the first record in the resulting chunk.
+CONTEXT_FILENAME = "!-CONTEXT.txt"
+
+DEFAULT_EXCLUDES = [".git", "__pycache__", "node_modules", "lib", "output", ".mfdb_lock", "dist", "build", CHUNK_TARGET_DIRNAME]
 
 # Text Chunk Separators (Standardized)
 SEP_START = "--- FILE: "
@@ -680,12 +762,7 @@ def bejson_utility_slugify(text: str) -> str:
     return slug
 
 def bejson_utility_is_binary(file_path: Union[str, Path]) -> bool:
-    """Detection logic matching official chunker tools. Only reads the
-    first 1024 bytes as a fast, cheap check for the common case -- this
-    is intentional and kept (audit F-53's real fix lives in
-    bejson_utility_encode_file below, not here): a file that's valid
-    UTF-8 for its first 1024 bytes but contains binary/invalid-UTF-8
-    data later on will still return False here, same as before."""
+    """Detection logic matching official chunker tools."""
     try:
         with open(file_path, 'tr', encoding='utf-8') as f:
             f.read(1024)
@@ -697,35 +774,11 @@ def bejson_utility_encode_file(file_path: Union[str, Path], use_base64: bool = F
     """
     Reads file content and returns (content, is_binary, is_base64).
     Matches MFDB v5 lossless binary logic.
-
-    FIX (2026-08-31, audit F-53): bejson_utility_is_binary()'s 1024-byte
-    quick check can say "not binary" for a file that's valid UTF-8 for
-    its first 1024 bytes but has binary/invalid data further in. That
-    used to hit the bare `except Exception: return "", True, False`
-    below -- silently discarding the file's actual content as an empty
-    string, with no error, no warning, nothing indicating data was lost.
-    A file "chunked" this way looked successfully archived but its real
-    content was gone.
-
-    Now catches UnicodeDecodeError specifically and falls back to
-    base64-encoding the raw bytes instead -- exactly what would have
-    happened if bejson_utility_is_binary() had correctly detected the
-    file as binary in the first place, so the content is preserved
-    losslessly rather than dropped. Only a genuine UnicodeDecodeError
-    triggers this fallback; other exceptions (e.g. the file vanishing
-    mid-read) still fall through to the original silent-empty behavior,
-    unchanged.
     """
     is_bin = bejson_utility_is_binary(file_path)
     if not is_bin:
         try:
             return Path(file_path).read_text(encoding="utf-8"), False, False
-        except UnicodeDecodeError:
-            try:
-                raw = Path(file_path).read_bytes()
-                return base64.b64encode(raw).decode('utf-8'), True, True
-            except Exception:
-                return "", True, False
         except Exception:
             return "", True, False
 
@@ -756,7 +809,9 @@ def bejson_utility_create_cli_chunk(target_dir: str, project_name: str, version:
     values.append(meta_row)
 
     for root, dirs, files in os.walk(target_path):
+        dirs.sort()
         dirs[:] = [d for d in dirs if d not in DEFAULT_EXCLUDES]
+        files.sort()
         for file in files:
             f_path = Path(root) / file
             if f_path.suffix.lower() in DEFAULT_EXTENSIONS:
@@ -786,7 +841,9 @@ def bejson_utility_create_mfdb_version(target_dir: str, version: str, use_base64
     f_count = len(SCHEMA_MFDB_ENTITY)
 
     for root, dirs, files in os.walk(target_path):
+        dirs.sort()
         dirs[:] = [d for d in dirs if d not in DEFAULT_EXCLUDES]
+        files.sort()
         for file in files:
             f_path = Path(root) / file
             if f_path.suffix.lower() in DEFAULT_EXTENSIONS:
@@ -812,7 +869,9 @@ def bejson_utility_chunk_to_text(target_dir: str) -> str:
     output = []
 
     for root, dirs, files in os.walk(target_path):
+        dirs.sort()
         dirs[:] = [d for d in dirs if d not in DEFAULT_EXCLUDES]
+        files.sort()
         for file in files:
             f_path = Path(root) / file
             if f_path.suffix.lower() in DEFAULT_EXTENSIONS and not bejson_utility_is_binary(f_path):
@@ -907,7 +966,9 @@ def bejson_utility_create_chunked_104(target_dir: str, version: str = "latest",
 
     values = []
     for root, dirs, files in os.walk(target_path):
+        dirs.sort()
         dirs[:] = [d for d in dirs if d not in excl]
+        files.sort()
         for file in files:
             f_path = Path(root) / file
             if f_path.suffix.lower() in exts:
@@ -949,6 +1010,19 @@ def bejson_utility_create_chunked_104(target_dir: str, version: str = "latest",
         "Fields": CHUNKED_104_FIELDS,
         "Values": values,
     }
+
+def bejson_utility_write_context_file(target_dir: Union[str, Path], text: str) -> Path:
+    """
+    Contextualize Chunk: writes `text` into the target directory as
+    CONTEXT_FILENAME ("!-CONTEXT.txt"), overwriting any previous one.
+    Called before the chunking walk so the file is picked up like any other
+    file in the target; the "!" prefix plus the deterministic files.sort()
+    added to every walk above guarantees it is the first record chunked.
+    """
+    target_path  = Path(target_dir).resolve()
+    context_path = target_path / CONTEXT_FILENAME
+    context_path.write_text(text, encoding="utf-8")
+    return context_path
 
 # ── Namespace shims ─────────────────────────────────────────────────────────────
 # The remainder of this file (unchanged from the original CLI_Chunker.py body)
@@ -1008,6 +1082,7 @@ Utility = types.SimpleNamespace(
     CHUNKED_104_FIELDS=CHUNKED_104_FIELDS,
     bejson_utility_hash_file_bytes=bejson_utility_hash_file_bytes,
     bejson_utility_create_chunked_104=bejson_utility_create_chunked_104,
+    bejson_utility_write_context_file=bejson_utility_write_context_file,
 )
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -1088,27 +1163,77 @@ def toggle_default_schema() -> None:
     print(f"[*] Default chunk schema toggled: {current} -> {new_value}")
     print(f"[*] --chunk will now use {label} by default until toggled again.")
 
+# ── Persistent Chunk-in-Target toggle ───────────────────────────────────────────
+CHUNK_TARGET_CONFIG_FILE = BASE_DIR / "data" / "chunk_target_config.104a.bejson"
+CHUNK_TARGET_CONFIG_FIELDS = [
+    {"name": "Chunk_In_Target", "type": "boolean"},
+]
+
+def load_chunk_in_target() -> bool:
+    """
+    Reads the persisted Chunk-in-Target setting. Defaults to False (disabled)
+    if the config file doesn't exist yet or is unreadable.
+    """
+    if not CHUNK_TARGET_CONFIG_FILE.exists():
+        return False
+    try:
+        doc    = BEJSONCore.bejson_core_load_file(str(CHUNK_TARGET_CONFIG_FILE))
+        values = doc.get("Values", [])
+        if values:
+            return bool(values[0][0])
+    except Exception:
+        pass
+    return False
+
+def save_chunk_in_target(enabled: bool) -> None:
+    _ensure_data_dir()
+    doc = BEJSONCore.bejson_core_create_104a("ChunkTargetConfig", CHUNK_TARGET_CONFIG_FIELDS, [[bool(enabled)]])
+    BEJSONCore.bejson_core_atomic_write(str(CHUNK_TARGET_CONFIG_FILE), doc)
+
+def toggle_chunk_in_target() -> None:
+    """Flips the persisted Chunk-in-Target mode and reports the new state."""
+    current   = load_chunk_in_target()
+    new_value = not current
+    save_chunk_in_target(new_value)
+    state = "enabled" if new_value else "disabled"
+    print(f"[*] Chunk-in-Target mode toggled: {current} -> {new_value}")
+    if new_value:
+        print(f"[*] --chunk will now also copy each chunk into '{CHUNK_TARGET_DIRNAME}/' "
+              f"inside the target directory, until toggled again.")
+    else:
+        print(f"[*] --chunk will no longer copy chunks into the target directory.")
+
 # ── Registry ───────────────────────────────────────────────────────────────────
 def save_to_registry(project_name, original_path):
     _ensure_data_dir()
     registry = []
+    fmap = {f["name"]: idx for idx, f in enumerate(REGISTRY_FIELDS)}
     if REGISTRY_FILE.exists():
         try:
             doc = BEJSONCore.bejson_core_load_file(str(REGISTRY_FILE))
             registry = doc.get("Values", [])
+            fmap = BEJSONCore.bejson_core_get_field_map(doc) or fmap
         except Exception:
             pass
 
+    name_idx = fmap.get("project_name", 0)
+    path_idx = fmap.get("original_path", 1)
+    last_idx = fmap.get("last_chunked", 2)
+
     found = False
     for i, row in enumerate(registry):
-        if row[0] == project_name:
-            registry[i][1] = str(original_path)
-            registry[i][2] = get_timestamp()
+        if row[name_idx] == project_name:
+            registry[i][path_idx] = str(original_path)
+            registry[i][last_idx] = get_timestamp()
             found = True
             break
 
     if not found:
-        registry.append([project_name, str(original_path), get_timestamp()])
+        new_row = [None] * len(fmap)
+        new_row[name_idx] = project_name
+        new_row[path_idx] = str(original_path)
+        new_row[last_idx] = get_timestamp()
+        registry.append(new_row)
 
     doc = BEJSONCore.bejson_core_create_104a("ProjectRegistry", REGISTRY_FIELDS, registry)
     BEJSONCore.bejson_core_atomic_write(str(REGISTRY_FILE), doc)
@@ -1116,14 +1241,25 @@ def save_to_registry(project_name, original_path):
 def save_to_history(project_name, file_path):
     _ensure_data_dir()
     history = []
+    fmap = {f["name"]: idx for idx, f in enumerate(HISTORY_FIELDS)}
     if HISTORY_FILE.exists():
         try:
             doc = BEJSONCore.bejson_core_load_file(str(HISTORY_FILE))
             history = doc.get("Values", [])
+            fmap = BEJSONCore.bejson_core_get_field_map(doc) or fmap
         except Exception:
             pass
 
-    history.insert(0, [get_timestamp(), project_name, str(file_path)])
+    ts_idx = fmap.get("timestamp", 0)
+    proj_idx = fmap.get("project_name", 1)
+    file_idx = fmap.get("file_path", 2)
+
+    new_entry = [None] * len(fmap)
+    new_entry[ts_idx] = get_timestamp()
+    new_entry[proj_idx] = project_name
+    new_entry[file_idx] = str(file_path)
+
+    history.insert(0, new_entry)
     history = history[:100]
 
     doc = BEJSONCore.bejson_core_create_104a("ChunkHistory", HISTORY_FIELDS, history)
@@ -1140,10 +1276,17 @@ def list_chunk_index():
         if not values:
             print("Registry is empty.")
             return
+        fmap = BEJSONCore.bejson_core_get_field_map(doc)
+        name_idx = fmap.get("project_name", 0)
+        path_idx = fmap.get("original_path", 1)
+        last_idx = fmap.get("last_chunked", 2)
+
         print(f"\n{'ID':<4} | {'Project Name':<28} | {'Last Chunked':<22} | Source Path")
         print("-" * 110)
         for i, row in enumerate(values, 1):
-            name, path, last = row
+            name = row[name_idx]
+            path = row[path_idx]
+            last = row[last_idx]
             print(f"{i:<4} | {name:<28} | {last:<22} | {path}")
     except Exception as e:
         print(f"Error reading registry: {e}")
@@ -1158,10 +1301,17 @@ def list_unchunk_index():
         if not values:
             print("History is empty.")
             return
+        fmap = BEJSONCore.bejson_core_get_field_map(doc)
+        ts_idx = fmap.get("timestamp", 0)
+        proj_idx = fmap.get("project_name", 1)
+        file_idx = fmap.get("file_path", 2)
+
         print(f"\n{'ID':<4} | {'Timestamp':<22} | {'Project':<25} | Chunk Path")
         print("-" * 110)
         for i, row in enumerate(values, 1):
-            ts, proj, path = row[0], row[1], row[-1]
+            ts   = row[ts_idx]
+            proj = row[proj_idx]
+            path = row[file_idx] if len(row) > file_idx else row[-1]
             print(f"{i:<4} | {ts:<22} | {proj:<25} | {path}")
     except Exception as e:
         print(f"Error reading history: {e}")
@@ -1174,8 +1324,10 @@ def resolve_registry_path(index_str):
         idx = int(index_str) - 1
         doc = BEJSONCore.bejson_core_load_file(str(REGISTRY_FILE))
         values = doc.get("Values", [])
+        fmap = BEJSONCore.bejson_core_get_field_map(doc)
+        path_idx = fmap.get("original_path", 1)
         if 0 <= idx < len(values):
-            return values[idx][1]
+            return values[idx][path_idx]
     except Exception:
         pass
     return None
@@ -1187,8 +1339,11 @@ def resolve_history_path(index_str):
         idx = int(index_str) - 1
         doc = BEJSONCore.bejson_core_load_file(str(HISTORY_FILE))
         values = doc.get("Values", [])
+        fmap = BEJSONCore.bejson_core_get_field_map(doc)
+        file_idx = fmap.get("file_path", 2)
         if 0 <= idx < len(values):
-            return values[idx][-1]
+            row = values[idx]
+            return row[file_idx] if len(row) > file_idx else row[-1]
     except Exception:
         pass
     return None
@@ -1202,9 +1357,12 @@ def expell_project(index_str):
         idx    = int(index_str) - 1
         doc    = BEJSONCore.bejson_core_load_file(str(REGISTRY_FILE))
         values = doc.get("Values", [])
+        fmap   = BEJSONCore.bejson_core_get_field_map(doc)
+        name_idx = fmap.get("project_name", 0)
         if 0 <= idx < len(values):
             removed = values.pop(idx)
-            print(f"[*] Expelled: {removed[0]} (registry entry removed, files on disk preserved)")
+            proj_name = removed[name_idx]
+            print(f"[*] Expelled: {proj_name} (registry entry removed, files on disk preserved)")
             doc = BEJSONCore.bejson_core_create_104a("ProjectRegistry", REGISTRY_FIELDS, values)
             BEJSONCore.bejson_core_atomic_write(str(REGISTRY_FILE), doc)
         else:
@@ -1220,9 +1378,11 @@ def delete_project(index_str):
         idx    = int(index_str) - 1
         doc    = BEJSONCore.bejson_core_load_file(str(REGISTRY_FILE))
         values = doc.get("Values", [])
+        fmap   = BEJSONCore.bejson_core_get_field_map(doc)
+        name_idx = fmap.get("project_name", 0)
         if 0 <= idx < len(values):
             removed      = values.pop(idx)
-            project_name = removed[0]
+            project_name = removed[name_idx]
             print(f"[*] Deleting project: {project_name}")
             doc = BEJSONCore.bejson_core_create_104a("ProjectRegistry", REGISTRY_FIELDS, values)
             BEJSONCore.bejson_core_atomic_write(str(REGISTRY_FILE), doc)
@@ -1238,13 +1398,22 @@ def delete_project(index_str):
         print(f"Error deleting project: {e}")
 
 # ── Core operations ────────────────────────────────────────────────────────────
-def run_chunk(target_dir, schema="104", extensions=None, exclude_dirs=None):
+def run_chunk(target_dir, schema="104", extensions=None, exclude_dirs=None,
+              context_text=None, chunk_in_target=False):
     """
     schema: "104" (default — Chunked-104 flat schema, see Chunked-104a_Template.bejson.json)
             or "104db" (fallback — legacy multi-record archive format).
     extensions/exclude_dirs: optional custom include/exclude pattern lists that
             override DEFAULT_EXTENSIONS/DEFAULT_EXCLUDES for this run only.
             Only honored when schema="104" — the 104db path is unchanged.
+            CHUNK_TARGET_DIRNAME ("chunked5") is always appended to the
+            effective excludes so it's never walked back into itself.
+    context_text: Contextualize Chunk — when set, written into the target
+            directory as CONTEXT_FILENAME ("!-CONTEXT.txt") before chunking,
+            so it becomes the first record chunked.
+    chunk_in_target: Chunk-in-Target mode — when True, the resulting chunk
+            file is also copied into CHUNK_TARGET_DIRNAME ("chunked5/")
+            inside the target directory, overwriting any previous copy there.
     """
     target_path  = Path(target_dir).resolve()
     if not target_path.is_dir():
@@ -1255,11 +1424,23 @@ def run_chunk(target_dir, schema="104", extensions=None, exclude_dirs=None):
     project_dir  = PROJECTS_DIR / project_name
     project_dir.mkdir(parents=True, exist_ok=True)
 
+    if context_text and context_text.strip():
+        ctx_path = Utility.bejson_utility_write_context_file(target_path, context_text.strip())
+        print(f"[*] Contextualize Chunk: wrote {ctx_path}")
+
     evade_txt = ".txt" if DEFAULT_CONFIG.get("evade_mime") else ""
 
     if schema == "104":
         ext      = ".104a.bejson" + evade_txt
         out_file = project_dir / f"Chunked_{Utility.bejson_utility_sanitize_name(project_name)}{ext}"
+
+        # CHUNK_TARGET_DIRNAME must always be excluded, even when the caller
+        # supplied a custom exclude list that doesn't happen to include it —
+        # otherwise a Chunk-in-Target copy from a previous run gets swept
+        # back into the next chunk.
+        effective_excludes = list(exclude_dirs) if exclude_dirs is not None else None
+        if effective_excludes is not None and CHUNK_TARGET_DIRNAME not in effective_excludes:
+            effective_excludes.append(CHUNK_TARGET_DIRNAME)
 
         print(f"[*] Mode: CHUNK (104 — Chunked-104 schema)")
         print(f"[*] Project: {project_name}")
@@ -1267,14 +1448,14 @@ def run_chunk(target_dir, schema="104", extensions=None, exclude_dirs=None):
         print(f"[*] Output:  {out_file}")
         if extensions is not None:
             print(f"[*] Custom extensions: {extensions}")
-        if exclude_dirs is not None:
-            print(f"[*] Custom excludes:   {exclude_dirs}")
+        if effective_excludes is not None:
+            print(f"[*] Custom excludes:   {effective_excludes}")
 
         doc = Utility.bejson_utility_create_chunked_104(
             target_dir=str(target_path),
             version="latest",
             extensions=extensions,
-            exclude_dirs=exclude_dirs,
+            exclude_dirs=effective_excludes,
         )
     else:
         ext      = ".104db.bejson" + evade_txt
@@ -1304,6 +1485,12 @@ def run_chunk(target_dir, schema="104", extensions=None, exclude_dirs=None):
         print(f"[*] Records: {len(doc['Values'])}")
         save_to_registry(project_name, target_path)
         save_to_history(project_name, out_file)
+        if chunk_in_target:
+            target_copy_dir = target_path / CHUNK_TARGET_DIRNAME
+            target_copy_dir.mkdir(parents=True, exist_ok=True)
+            target_copy_path = target_copy_dir / out_file.name
+            shutil.copy2(str(out_file), str(target_copy_path))
+            print(f"[*] Chunk-in-Target: copied → {target_copy_path}")
     else:
         print("[ERROR] Failed to save BEJSON chunk.")
 
@@ -1324,39 +1511,6 @@ def _derive_project_name_from_chunk_filename(input_path: Path) -> str:
     if name.startswith("Chunked_"):
         name = name[len("Chunked_"):]
     return name or "RestoredProject"
-
-def _chunker_safe_join(base_dir: Path, rel_path: str) -> Path:
-    """FIX (2026-08-25, audit F-05): run_unchunk() used to do
-    `out_dir / rel_path` and hand the result straight to
-    `.parent.mkdir(parents=True, exist_ok=True)` with zero sanitization.
-    rel_path comes directly from the BEJSON chunk file's Relative_Path /
-    file_path field -- a crafted chunk containing
-    '"Relative_Path": "../../etc/cron.d/backdoor"' would write outside
-    out_dir entirely, with mkdir(parents=True) happily creating whatever
-    intermediate directories that needs.
-
-    This file is fully self-contained (no lib/ imports at all -- flagged
-    separately as a future tools_lib reroute candidate, not attempted
-    here), so this is a local, minimal guard rather than a shared import:
-    resolve the joined path and reject it outright if it would land
-    outside base_dir. Uses Path.is_relative_to() (falls back to a manual
-    parents walk on Python <3.9) rather than a raw startswith() string
-    check, since a sibling directory with a similar name (base_dir=
-    "/x/out" vs a resolved target of "/x/out_evil/secret") would pass a
-    naive prefix test with no traversal needed at all.
-    """
-    base = base_dir.resolve()
-    target = (base / rel_path).resolve()
-    is_inside = target == base
-    if not is_inside:
-        try:
-            is_inside = target.is_relative_to(base)
-        except AttributeError:
-            is_inside = base in target.parents
-    if not is_inside:
-        raise ValueError(f"Unsafe Relative_Path in chunk file -- '{rel_path}' resolves outside {base}")
-    return target
-
 
 def run_unchunk(bejson_file, destination=None, zip_output=False):
     input_path = Path(bejson_file).resolve()
@@ -1416,15 +1570,9 @@ def run_unchunk(bejson_file, destination=None, zip_output=False):
 
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        skipped = []
         for rel_path, content, binary in records:
             if rel_path:
-                try:
-                    target_file = _chunker_safe_join(out_dir, rel_path)
-                except ValueError as e:
-                    print(f"  [SKIPPED - UNSAFE PATH] {rel_path} ({e})")
-                    skipped.append(rel_path)
-                    continue
+                target_file = out_dir / rel_path
                 target_file.parent.mkdir(parents=True, exist_ok=True)
                 if binary:
                     target_file.touch()
@@ -1432,8 +1580,6 @@ def run_unchunk(bejson_file, destination=None, zip_output=False):
                     target_file.write_text(content, encoding="utf-8")
                 print(f"  [>] {rel_path}")
 
-        if skipped:
-            print(f"\n[WARNING] {len(skipped)} file(s) skipped for an unsafe Relative_Path -- see above.")
         print(f"\n[SUCCESS] Rebuilt at {out_dir}")
 
         if zip_output:
@@ -1464,6 +1610,10 @@ def main():
     group.add_argument("--toggle-schema",      action="store_true",
                         help="Toggle the persisted default chunk schema between '104' (Chunked-104) "
                              "and '104db'. Remembered across runs until toggled again.")
+    group.add_argument("--toggle-chunk-in-target", action="store_true",
+                        help=f"Toggle the persisted Chunk-in-Target mode, which copies each chunk into "
+                             f"'{CHUNK_TARGET_DIRNAME}/' inside the target directory. Remembered across "
+                             f"runs until toggled again.")
 
     parser.add_argument("--dest", metavar="DIR", help="Custom output directory for --unchunk")
     parser.add_argument("--zip", action="store_true",
@@ -1479,25 +1629,744 @@ def main():
     parser.add_argument("--exclude-patterns", metavar="DIR_LIST",
                          help="Comma-separated custom directory names to exclude, e.g. '.git,dist' "
                               "(only used with --schema 104; overrides the default exclude list).")
+    parser.add_argument("--context", metavar="TEXT", default=None,
+                         help="Contextualize Chunk: for this --chunk / --chunk-index run, write TEXT into "
+                              f"the target directory as '{CONTEXT_FILENAME}' before chunking, so it's the "
+                              "first record in the resulting chunk.")
+    parser.add_argument("--chunk-in-target", dest="chunk_in_target_override", action="store_true", default=None,
+                         help=f"One-off: for this --chunk / --chunk-index run, also copy the resulting chunk "
+                              f"into '{CHUNK_TARGET_DIRNAME}/' inside the target directory, regardless of the "
+                              f"persisted Chunk-in-Target setting.")
 
     args = parser.parse_args()
 
     custom_extensions   = _parse_csv_patterns(args.patterns)
     custom_exclude_dirs = _parse_csv_patterns(args.exclude_patterns)
     effective_schema     = args.schema if args.schema is not None else load_default_schema()
+    effective_chunk_in_target = (
+        args.chunk_in_target_override if args.chunk_in_target_override is not None else load_chunk_in_target()
+    )
 
     if args.toggle_schema:
         toggle_default_schema()
+    elif args.toggle_chunk_in_target:
+        toggle_chunk_in_target()
     elif args.list_chunk_index or args.list_project_index:
         list_chunk_index()
     elif args.list_unchunk_index:
         list_unchunk_index()
     elif args.chunk:
-        run_chunk(args.chunk, schema=effective_schema, extensions=custom_extensions, exclude_dirs=custom_exclude_dirs)
+        run_chunk(args.chunk, schema=effective_schema, extensions=custom_extensions, exclude_dirs=custom_exclude_dirs,
+                   context_text=args.context, chunk_in_target=effective_chunk_in_target)
     elif args.chunk_index:
         source_path = resolve_registry_path(args.chunk_index)
         if source_path:
-            run_chunk(source_path, schema=effective_schema, extensions=custom_extensions, exclude_dirs=custom_exclude_dirs)
+            run_chunk(source_path, schema=effective_schema, extensions=custom_extensions, exclude_dirs=custom_exclude_dirs,
+                       context_text=args.context, chunk_in_target=effective_chunk_in_target)
+        else:
+            print(f"Error: Project ID {args.chunk_index} not found in registry.")
+    elif args.unchunk:
+        run_unchunk(args.unchunk, args.dest, zip_output=args.zip)
+    elif args.unchunk_index:
+        chunk_path = resolve_history_path(args.unchunk_index)
+        if chunk_path:
+            run_unchunk(chunk_path, args.dest, zip_output=args.zip)
+        else:
+            print(f"Error: Chunk ID {args.unchunk_index} not found in history.")
+    elif args.expell_project:
+        expell_project(args.expell_project)
+    elif args.delete_project:
+        delete_project(args.delete_project)
+
+
+if __name__ == "__main__":
+    main()# ── Config-Routed Shared & Extension Library Binding ───────────────────────────
+TOOL_CONFIG_FILE = BASE_DIR / "config" / "config.json"
+
+def _bootstrap_chunker_library_paths() -> None:
+    shared_lib_rel_path = "../../lib"
+    ext_lib_rel_path = "../../lib_extensions"
+    if TOOL_CONFIG_FILE.exists():
+        try:
+            config_raw_doc = json.loads(TOOL_CONFIG_FILE.read_text(encoding="utf-8"))
+            config_field_map = {
+                field_def["name"]: idx
+                for idx, field_def in enumerate(config_raw_doc.get("Fields", []))
+            }
+            name_col_idx = config_field_map.get("setting_name", 0)
+            val_col_idx = config_field_map.get("setting_value", 1)
+            for config_row in config_raw_doc.get("Values", []):
+                if len(config_row) > max(name_col_idx, val_col_idx):
+                    if config_row[name_col_idx] == "shared_lib_directory":
+                        shared_lib_rel_path = str(config_row[val_col_idx])
+                    elif config_row[name_col_idx] == "lib_extensions_directory":
+                        ext_lib_rel_path = str(config_row[val_col_idx])
+        except Exception:
+            pass
+    for rel_candidate in (shared_lib_rel_path, ext_lib_rel_path):
+        resolved_candidate = (BASE_DIR / rel_candidate).resolve()
+        if resolved_candidate.is_dir() and str(resolved_candidate) not in sys.path:
+            sys.path.insert(0, str(resolved_candidate))
+
+_bootstrap_chunker_library_paths()
+
+try:
+    import lib_bejson_Core_bejson_env as _ExtEnv
+    source_env = _ExtEnv.source_env
+    resolve_path = _ExtEnv.resolve_path
+    get_env_path = _ExtEnv.get_env_path
+except ImportError:
+    pass
+
+try:
+    import lib_bejson_Core_bejson_core as BEJSONCore
+except ImportError:
+    BEJSONCore = types.SimpleNamespace(
+        BEJSONCoreError=BEJSONCoreError,
+        ResilientPIDLock=ResilientPIDLock,
+        bejson_core_load_file=bejson_core_load_file,
+        bejson_core_atomic_write=bejson_core_atomic_write,
+        bejson_core_acquire_lock=bejson_core_acquire_lock,
+        bejson_core_release_lock=bejson_core_release_lock,
+        bejson_core_get_field_map=bejson_core_get_field_map,
+        bejson_core_get_field_index=bejson_core_get_field_index,
+        bejson_core_create_104=bejson_core_create_104,
+        bejson_core_create_104a=bejson_core_create_104a,
+        bejson_core_create_104db=bejson_core_create_104db,
+        bejson_core_load_string=bejson_core_load_string,
+        bejson_core_get_record_count=bejson_core_get_record_count,
+        bejson_core_add_record=bejson_core_add_record,
+        bejson_core_remove_record=bejson_core_remove_record,
+        bejson_core_update_field=bejson_core_update_field,
+        bejson_core_filter_rows=bejson_core_filter_rows,
+        bejson_core_sort_by_field=bejson_core_sort_by_field,
+        bejson_core_is_valid=bejson_core_is_valid,
+        bejson_core_get_version=bejson_core_get_version,
+        bejson_core_get_stats=bejson_core_get_stats,
+    )
+
+try:
+    import lib_bejson_Core_bejson_validator as Validator
+except ImportError:
+    Validator = types.SimpleNamespace(
+        ValidationResult=ValidationResult,
+        BEJSONValidationError=BEJSONValidationError,
+        validate_bejson=validate_bejson,
+        bejson_validator_get_report=bejson_validator_get_report,
+        bejson_validator_validate_string=bejson_validator_validate_string,
+        bejson_validator_validate_file=bejson_validator_validate_file,
+    )
+
+try:
+    import lib_bejson_Utility_bejson_utility as _ExtUtility
+    for _attr_name in (
+        "DEFAULT_EXTENSIONS", "DEFAULT_EXCLUDES", "SCHEMA_CLI_CHUNKER",
+        "SCHEMA_MFDB_ENTITY", "CHUNKED_104_FIELDS", "bejson_utility_hash_file_bytes",
+        "bejson_utility_create_chunked_104",
+    ):
+        if not hasattr(_ExtUtility, _attr_name):
+            setattr(_ExtUtility, _attr_name, globals()[_attr_name])
+    Utility = _ExtUtility
+except ImportError:
+    Utility = types.SimpleNamespace(
+        DEFAULT_EXTENSIONS=DEFAULT_EXTENSIONS,
+        DEFAULT_EXCLUDES=DEFAULT_EXCLUDES,
+        SCHEMA_CLI_CHUNKER=SCHEMA_CLI_CHUNKER,
+        SCHEMA_MFDB_ENTITY=SCHEMA_MFDB_ENTITY,
+        bejson_utility_sanitize_name=bejson_utility_sanitize_name,
+        bejson_utility_slugify=bejson_utility_slugify,
+        bejson_utility_is_binary=bejson_utility_is_binary,
+        bejson_utility_encode_file=bejson_utility_encode_file,
+        bejson_utility_create_cli_chunk=bejson_utility_create_cli_chunk,
+        bejson_utility_create_mfdb_version=bejson_utility_create_mfdb_version,
+        bejson_utility_chunk_to_text=bejson_utility_chunk_to_text,
+        bejson_utility_unchunk_from_text=bejson_utility_unchunk_from_text,
+        bejson_utility_parse_json=bejson_utility_parse_json,
+        bejson_utility_save_chunk=bejson_utility_save_chunk,
+        bejson_utility_get_timestamp=bejson_utility_get_timestamp,
+        CHUNKED_104_FIELDS=CHUNKED_104_FIELDS,
+        bejson_utility_hash_file_bytes=bejson_utility_hash_file_bytes,
+        bejson_utility_create_chunked_104=bejson_utility_create_chunked_104,
+    )
+
+# ════════════════════════════════════════════════════════════════════════════
+# END EMBEDDED LIBRARY CODE
+# ════════════════════════════════════════════════════════════════════════════
+
+# ── Paths ──────────────────────────────────────────────────────────────────────
+PROJECTS_DIR  = BASE_DIR / "Projects"
+HISTORY_FILE  = BASE_DIR / "data" / "chunk_history.104a.bejson"
+REGISTRY_FILE = BASE_DIR / "data" / "project_registry.104a.bejson"
+SCHEMA_CONFIG_FILE = BASE_DIR / "data" / "chunker_config.104a.bejson"
+
+# ── Schema ─────────────────────────────────────────────────────────────────────
+HISTORY_FIELDS = [
+    {"name": "timestamp",    "type": "string"},
+    {"name": "project_name", "type": "string"},
+    {"name": "file_path",    "type": "string"},
+]
+
+REGISTRY_FIELDS = [
+    {"name": "project_name",  "type": "string"},
+    {"name": "original_path", "type": "string"},
+    {"name": "last_chunked",  "type": "string"},
+]
+
+DEFAULT_CONFIG = {
+    "extensions":  Utility.DEFAULT_EXTENSIONS,
+    "exclude_dirs": Utility.DEFAULT_EXCLUDES,
+    "evade_mime":  True,
+}
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
+def get_timestamp():
+    return Utility.bejson_utility_get_timestamp()
+
+def _ensure_data_dir():
+    (BASE_DIR / "data").mkdir(parents=True, exist_ok=True)
+
+def _parse_csv_patterns(raw):
+    """Splits a comma-separated CLI arg into a clean list, or None if unset."""
+    if not raw:
+        return None
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+# ── Persistent schema toggle ────────────────────────────────────────────────────
+SCHEMA_CONFIG_FIELDS = [
+    {"name": "Default_Schema", "type": "string"},
+]
+
+def load_default_schema() -> str:
+    """
+    Reads the persisted default schema ("104" or "104db"). Falls back to
+    "104" (Chunked-104) if the config file doesn't exist yet or is unreadable —
+    matches the current out-of-the-box default.
+    """
+    if not SCHEMA_CONFIG_FILE.exists():
+        return "104"
+    try:
+        doc    = BEJSONCore.bejson_core_load_file(str(SCHEMA_CONFIG_FILE))
+        values = doc.get("Values", [])
+        if values and values[0][0] in ("104", "104db"):
+            return values[0][0]
+    except Exception:
+        pass
+    return "104"
+
+def save_default_schema(schema_value: str) -> None:
+    _ensure_data_dir()
+    doc = BEJSONCore.bejson_core_create_104a("ChunkerConfig", SCHEMA_CONFIG_FIELDS, [[schema_value]])
+    BEJSONCore.bejson_core_atomic_write(str(SCHEMA_CONFIG_FILE), doc)
+
+def toggle_default_schema() -> None:
+    """Flips the persisted default schema between '104' and '104db' and reports the new state."""
+    current = load_default_schema()
+    new_value = "104db" if current == "104" else "104"
+    save_default_schema(new_value)
+    label = "Chunked-104 (104a)" if new_value == "104" else "legacy 104db"
+    print(f"[*] Default chunk schema toggled: {current} -> {new_value}")
+    print(f"[*] --chunk will now use {label} by default until toggled again.")
+
+# ── Persistent Chunk-in-Target toggle ───────────────────────────────────────────
+CHUNK_TARGET_CONFIG_FILE = BASE_DIR / "data" / "chunk_target_config.104a.bejson"
+CHUNK_TARGET_CONFIG_FIELDS = [
+    {"name": "Chunk_In_Target", "type": "boolean"},
+]
+
+def load_chunk_in_target() -> bool:
+    """
+    Reads the persisted Chunk-in-Target setting. Defaults to False (disabled)
+    if the config file doesn't exist yet or is unreadable.
+    """
+    if not CHUNK_TARGET_CONFIG_FILE.exists():
+        return False
+    try:
+        doc    = BEJSONCore.bejson_core_load_file(str(CHUNK_TARGET_CONFIG_FILE))
+        values = doc.get("Values", [])
+        if values:
+            return bool(values[0][0])
+    except Exception:
+        pass
+    return False
+
+def save_chunk_in_target(enabled: bool) -> None:
+    _ensure_data_dir()
+    doc = BEJSONCore.bejson_core_create_104a("ChunkTargetConfig", CHUNK_TARGET_CONFIG_FIELDS, [[bool(enabled)]])
+    BEJSONCore.bejson_core_atomic_write(str(CHUNK_TARGET_CONFIG_FILE), doc)
+
+def toggle_chunk_in_target() -> None:
+    """Flips the persisted Chunk-in-Target mode and reports the new state."""
+    current   = load_chunk_in_target()
+    new_value = not current
+    save_chunk_in_target(new_value)
+    state = "enabled" if new_value else "disabled"
+    print(f"[*] Chunk-in-Target mode toggled: {current} -> {new_value}")
+    if new_value:
+        print(f"[*] --chunk will now also copy each chunk into '{CHUNK_TARGET_DIRNAME}/' "
+              f"inside the target directory, until toggled again.")
+    else:
+        print(f"[*] --chunk will no longer copy chunks into the target directory.")
+
+# ── Registry ───────────────────────────────────────────────────────────────────
+def save_to_registry(project_name, original_path):
+    _ensure_data_dir()
+    registry = []
+    fmap = {f["name"]: idx for idx, f in enumerate(REGISTRY_FIELDS)}
+    if REGISTRY_FILE.exists():
+        try:
+            doc = BEJSONCore.bejson_core_load_file(str(REGISTRY_FILE))
+            registry = doc.get("Values", [])
+            fmap = BEJSONCore.bejson_core_get_field_map(doc) or fmap
+        except Exception:
+            pass
+
+    name_idx = fmap.get("project_name", 0)
+    path_idx = fmap.get("original_path", 1)
+    last_idx = fmap.get("last_chunked", 2)
+
+    found = False
+    for i, row in enumerate(registry):
+        if row[name_idx] == project_name:
+            registry[i][path_idx] = str(original_path)
+            registry[i][last_idx] = get_timestamp()
+            found = True
+            break
+
+    if not found:
+        new_row = [None] * len(fmap)
+        new_row[name_idx] = project_name
+        new_row[path_idx] = str(original_path)
+        new_row[last_idx] = get_timestamp()
+        registry.append(new_row)
+
+    doc = BEJSONCore.bejson_core_create_104a("ProjectRegistry", REGISTRY_FIELDS, registry)
+    BEJSONCore.bejson_core_atomic_write(str(REGISTRY_FILE), doc)
+
+def save_to_history(project_name, file_path):
+    _ensure_data_dir()
+    history = []
+    fmap = {f["name"]: idx for idx, f in enumerate(HISTORY_FIELDS)}
+    if HISTORY_FILE.exists():
+        try:
+            doc = BEJSONCore.bejson_core_load_file(str(HISTORY_FILE))
+            history = doc.get("Values", [])
+            fmap = BEJSONCore.bejson_core_get_field_map(doc) or fmap
+        except Exception:
+            pass
+
+    ts_idx = fmap.get("timestamp", 0)
+    proj_idx = fmap.get("project_name", 1)
+    file_idx = fmap.get("file_path", 2)
+
+    new_entry = [None] * len(fmap)
+    new_entry[ts_idx] = get_timestamp()
+    new_entry[proj_idx] = project_name
+    new_entry[file_idx] = str(file_path)
+
+    history.insert(0, new_entry)
+    history = history[:100]
+
+    doc = BEJSONCore.bejson_core_create_104a("ChunkHistory", HISTORY_FIELDS, history)
+    BEJSONCore.bejson_core_atomic_write(str(HISTORY_FILE), doc)
+
+# ── Listing ────────────────────────────────────────────────────────────────────
+def list_chunk_index():
+    if not REGISTRY_FILE.exists():
+        print("No project registry found.")
+        return
+    try:
+        doc    = BEJSONCore.bejson_core_load_file(str(REGISTRY_FILE))
+        values = doc.get("Values", [])
+        if not values:
+            print("Registry is empty.")
+            return
+        fmap = BEJSONCore.bejson_core_get_field_map(doc)
+        name_idx = fmap.get("project_name", 0)
+        path_idx = fmap.get("original_path", 1)
+        last_idx = fmap.get("last_chunked", 2)
+
+        print(f"\n{'ID':<4} | {'Project Name':<28} | {'Last Chunked':<22} | Source Path")
+        print("-" * 110)
+        for i, row in enumerate(values, 1):
+            name = row[name_idx]
+            path = row[path_idx]
+            last = row[last_idx]
+            print(f"{i:<4} | {name:<28} | {last:<22} | {path}")
+    except Exception as e:
+        print(f"Error reading registry: {e}")
+
+def list_unchunk_index():
+    if not HISTORY_FILE.exists():
+        print("No chunk history found.")
+        return
+    try:
+        doc    = BEJSONCore.bejson_core_load_file(str(HISTORY_FILE))
+        values = doc.get("Values", [])
+        if not values:
+            print("History is empty.")
+            return
+        fmap = BEJSONCore.bejson_core_get_field_map(doc)
+        ts_idx = fmap.get("timestamp", 0)
+        proj_idx = fmap.get("project_name", 1)
+        file_idx = fmap.get("file_path", 2)
+
+        print(f"\n{'ID':<4} | {'Timestamp':<22} | {'Project':<25} | Chunk Path")
+        print("-" * 110)
+        for i, row in enumerate(values, 1):
+            ts   = row[ts_idx]
+            proj = row[proj_idx]
+            path = row[file_idx] if len(row) > file_idx else row[-1]
+            print(f"{i:<4} | {ts:<22} | {proj:<25} | {path}")
+    except Exception as e:
+        print(f"Error reading history: {e}")
+
+# ── Resolution helpers ─────────────────────────────────────────────────────────
+def resolve_registry_path(index_str):
+    if not REGISTRY_FILE.exists():
+        return None
+    try:
+        idx = int(index_str) - 1
+        doc = BEJSONCore.bejson_core_load_file(str(REGISTRY_FILE))
+        values = doc.get("Values", [])
+        fmap = BEJSONCore.bejson_core_get_field_map(doc)
+        path_idx = fmap.get("original_path", 1)
+        if 0 <= idx < len(values):
+            return values[idx][path_idx]
+    except Exception:
+        pass
+    return None
+
+def resolve_history_path(index_str):
+    if not HISTORY_FILE.exists():
+        return None
+    try:
+        idx = int(index_str) - 1
+        doc = BEJSONCore.bejson_core_load_file(str(HISTORY_FILE))
+        values = doc.get("Values", [])
+        fmap = BEJSONCore.bejson_core_get_field_map(doc)
+        file_idx = fmap.get("file_path", 2)
+        if 0 <= idx < len(values):
+            row = values[idx]
+            return row[file_idx] if len(row) > file_idx else row[-1]
+    except Exception:
+        pass
+    return None
+
+# ── Registry management ────────────────────────────────────────────────────────
+def expell_project(index_str):
+    if not REGISTRY_FILE.exists():
+        print("Error: No project registry found.")
+        return
+    try:
+        idx    = int(index_str) - 1
+        doc    = BEJSONCore.bejson_core_load_file(str(REGISTRY_FILE))
+        values = doc.get("Values", [])
+        fmap   = BEJSONCore.bejson_core_get_field_map(doc)
+        name_idx = fmap.get("project_name", 0)
+        if 0 <= idx < len(values):
+            removed = values.pop(idx)
+            proj_name = removed[name_idx]
+            print(f"[*] Expelled: {proj_name} (registry entry removed, files on disk preserved)")
+            doc = BEJSONCore.bejson_core_create_104a("ProjectRegistry", REGISTRY_FIELDS, values)
+            BEJSONCore.bejson_core_atomic_write(str(REGISTRY_FILE), doc)
+        else:
+            print(f"Error: Project ID {index_str} not found.")
+    except Exception as e:
+        print(f"Error expelling project: {e}")
+
+def delete_project(index_str):
+    if not REGISTRY_FILE.exists():
+        print("Error: No project registry found.")
+        return
+    try:
+        idx    = int(index_str) - 1
+        doc    = BEJSONCore.bejson_core_load_file(str(REGISTRY_FILE))
+        values = doc.get("Values", [])
+        fmap   = BEJSONCore.bejson_core_get_field_map(doc)
+        name_idx = fmap.get("project_name", 0)
+        if 0 <= idx < len(values):
+            removed      = values.pop(idx)
+            project_name = removed[name_idx]
+            print(f"[*] Deleting project: {project_name}")
+            doc = BEJSONCore.bejson_core_create_104a("ProjectRegistry", REGISTRY_FIELDS, values)
+            BEJSONCore.bejson_core_atomic_write(str(REGISTRY_FILE), doc)
+            project_dir = PROJECTS_DIR / project_name
+            if project_dir.exists():
+                shutil.rmtree(project_dir)
+                print(f"[*] Deleted files at: {project_dir}")
+            else:
+                print(f"Warning: Project folder not found at {project_dir}")
+        else:
+            print(f"Error: Project ID {index_str} not found.")
+    except Exception as e:
+        print(f"Error deleting project: {e}")
+
+# ── Core operations ────────────────────────────────────────────────────────────
+def run_chunk(target_dir, schema="104", extensions=None, exclude_dirs=None,
+              context_text=None, chunk_in_target=False):
+    """
+    schema: "104" (default — Chunked-104 flat schema, see Chunked-104a_Template.bejson.json)
+            or "104db" (fallback — legacy multi-record archive format).
+    extensions/exclude_dirs: optional custom include/exclude pattern lists that
+            override DEFAULT_EXTENSIONS/DEFAULT_EXCLUDES for this run only.
+            Only honored when schema="104" — the 104db path is unchanged.
+            CHUNK_TARGET_DIRNAME ("chunked5") is always appended to the
+            effective excludes so it's never walked back into itself.
+    context_text: Contextualize Chunk — when set, written into the target
+            directory as CONTEXT_FILENAME ("!-CONTEXT.txt") before chunking,
+            so it becomes the first record chunked.
+    chunk_in_target: Chunk-in-Target mode — when True, the resulting chunk
+            file is also copied into CHUNK_TARGET_DIRNAME ("chunked5/")
+            inside the target directory, overwriting any previous copy there.
+    """
+    target_path  = Path(target_dir).resolve()
+    if not target_path.is_dir():
+        print(f"Error: {target_dir} is not a directory.")
+        return
+
+    project_name = target_path.name.replace(" ", "_")
+    project_dir  = PROJECTS_DIR / project_name
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    if context_text and context_text.strip():
+        ctx_path = Utility.bejson_utility_write_context_file(target_path, context_text.strip())
+        print(f"[*] Contextualize Chunk: wrote {ctx_path}")
+
+    evade_txt = ".txt" if DEFAULT_CONFIG.get("evade_mime") else ""
+
+    if schema == "104":
+        ext      = ".104a.bejson" + evade_txt
+        out_file = project_dir / f"Chunked_{Utility.bejson_utility_sanitize_name(project_name)}{ext}"
+
+        # CHUNK_TARGET_DIRNAME must always be excluded, even when the caller
+        # supplied a custom exclude list that doesn't happen to include it —
+        # otherwise a Chunk-in-Target copy from a previous run gets swept
+        # back into the next chunk.
+        effective_excludes = list(exclude_dirs) if exclude_dirs is not None else None
+        if effective_excludes is not None and CHUNK_TARGET_DIRNAME not in effective_excludes:
+            effective_excludes.append(CHUNK_TARGET_DIRNAME)
+
+        print(f"[*] Mode: CHUNK (104 — Chunked-104 schema)")
+        print(f"[*] Project: {project_name}")
+        print(f"[*] Target:  {target_path}")
+        print(f"[*] Output:  {out_file}")
+        if extensions is not None:
+            print(f"[*] Custom extensions: {extensions}")
+        if effective_excludes is not None:
+            print(f"[*] Custom excludes:   {effective_excludes}")
+
+        doc = Utility.bejson_utility_create_chunked_104(
+            target_dir=str(target_path),
+            version="latest",
+            extensions=extensions,
+            exclude_dirs=effective_excludes,
+        )
+    else:
+        ext      = ".104db.bejson" + evade_txt
+        out_file = project_dir / f"Chunked_{Utility.bejson_utility_sanitize_name(project_name)}{ext}"
+
+        print(f"[*] Mode: CHUNK (104db)")
+        print(f"[*] Project: {project_name}")
+        print(f"[*] Target:  {target_path}")
+        print(f"[*] Output:  {out_file}")
+
+        doc = Utility.bejson_utility_create_cli_chunk(
+            target_dir=str(target_path),
+            project_name=project_name,
+            version="latest",
+        )
+
+    print("[*] Validating BEJSON structure...")
+    res = Validator.validate_bejson(doc)
+    if not res.valid:
+        print("\n[ERROR] BEJSON Validation Failed:")
+        for err in res.errors:
+            print(f"  - {err}")
+        return
+
+    if Utility.bejson_utility_save_chunk(str(out_file), doc):
+        print(f"\n[SUCCESS] Chunked → {out_file}")
+        print(f"[*] Records: {len(doc['Values'])}")
+        save_to_registry(project_name, target_path)
+        save_to_history(project_name, out_file)
+        if chunk_in_target:
+            target_copy_dir = target_path / CHUNK_TARGET_DIRNAME
+            target_copy_dir.mkdir(parents=True, exist_ok=True)
+            target_copy_path = target_copy_dir / out_file.name
+            shutil.copy2(str(out_file), str(target_copy_path))
+            print(f"[*] Chunk-in-Target: copied → {target_copy_path}")
+    else:
+        print("[ERROR] Failed to save BEJSON chunk.")
+
+def _derive_project_name_from_chunk_filename(input_path: Path) -> str:
+    """
+    Chunked-104 (104a) has no project_name field, so the name is derived from
+    the chunk filename itself, stripping known suffixes/prefixes.
+    """
+    name = input_path.name
+    known_suffixes = (".txt", ".bejson", ".104a", ".104db")
+    changed = True
+    while changed:
+        changed = False
+        for suf in known_suffixes:
+            if name.endswith(suf):
+                name = name[: -len(suf)]
+                changed = True
+    if name.startswith("Chunked_"):
+        name = name[len("Chunked_"):]
+    return name or "RestoredProject"
+
+def run_unchunk(bejson_file, destination=None, zip_output=False):
+    input_path = Path(bejson_file).resolve()
+    if not input_path.exists():
+        print(f"Error: File not found: {bejson_file}")
+        return
+
+    print(f"[*] Mode: UNCHUNK")
+    print(f"[*] Source: {input_path}")
+
+    try:
+        print("[*] Validating BEJSON structure...")
+        res = Validator.validate_bejson(str(input_path), is_file=True)
+        if not res.valid:
+            print("\n[ERROR] BEJSON Validation Failed:")
+            for err in res.errors:
+                print(f"  - {err}")
+            return
+
+        doc     = BEJSONCore.bejson_core_load_file(str(input_path))
+        version = doc.get("Format_Version")
+
+        if version == "104db":
+            fields    = [f["name"] for f in doc["Fields"]]
+            pname_idx = fields.index("project_name")
+            fpath_idx = fields.index("file_path")
+            cont_idx  = fields.index("content")
+            bin_idx   = fields.index("is_binary")
+
+            meta_rows = [r for r in doc["Values"] if r[0] == "ProjectMeta"]
+            proj_name = meta_rows[0][pname_idx] if meta_rows else "RestoredProject"
+            file_rows = [r for r in doc["Values"] if r[0] == "FileContent"]
+            records   = [(r[fpath_idx], r[cont_idx], r[bin_idx]) for r in file_rows]
+
+        elif version == "104a" and doc.get("Schema_Name") in ("Chunked-104a", "Chunked-104"):
+            # Accepts both the corrected name ("Chunked-104a") and the old buggy
+            # name ("Chunked-104") so chunks already produced before this fix
+            # still unchunk cleanly.
+            fields    = [f["name"] for f in doc["Fields"]]
+            fpath_idx = fields.index("Relative_Path")
+            cont_idx  = fields.index("File_Content")
+            bin_idx   = fields.index("Is_Binary")
+
+            proj_name = _derive_project_name_from_chunk_filename(input_path)
+            records   = [(r[fpath_idx], r[cont_idx], r[bin_idx]) for r in doc["Values"]]
+
+        else:
+            print(f"Error: Unrecognized chunk schema (Format_Version={version}, "
+                  f"Schema_Name={doc.get('Schema_Name')}). Expected 104db or Chunked-104a.")
+            return
+
+        if destination:
+            out_dir = Path(destination).resolve()
+        else:
+            ts_slug = get_timestamp().replace(":", "").replace("-", "")
+            out_dir = Path.cwd() / "Restored_Projects" / proj_name / ts_slug
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        for rel_path, content, binary in records:
+            if rel_path:
+                target_file = out_dir / rel_path
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+                if binary:
+                    target_file.touch()
+                else:
+                    target_file.write_text(content, encoding="utf-8")
+                print(f"  [>] {rel_path}")
+
+        print(f"\n[SUCCESS] Rebuilt at {out_dir}")
+
+        if zip_output:
+            zip_path_str = shutil.make_archive(str(out_dir), "zip", root_dir=str(out_dir))
+            shutil.rmtree(out_dir)
+            print(f"[SUCCESS] Zipped → {zip_path_str}")
+
+    except Exception as e:
+        print(f"\n[ERROR] Unchunking failed: {e}")
+
+# ── Entry point ────────────────────────────────────────────────────────────────
+def main():
+    parser = argparse.ArgumentParser(
+        prog="CLI_Chunker",
+        description="CLI_Chunker v2.3.0 — BEJSON Project Chunker & Rebuilder (standalone build, Chunked-104 default schema)",
+    )
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--chunk",              metavar="DIR",  help="Chunk a directory (overwrites previous)")
+    group.add_argument("--chunk-index",        metavar="ID",   help="Chunk a registered project by ID")
+    group.add_argument("--unchunk",            metavar="FILE", help="Unchunk a BEJSON 104db file")
+    group.add_argument("--unchunk-index",      metavar="ID",   help="Unchunk a historical chunk by ID")
+    group.add_argument("--list-chunk-index",   action="store_true", help="List registered projects")
+    group.add_argument("--list-project-index", action="store_true", help="Alias for --list-chunk-index")
+    group.add_argument("--list-unchunk-index", action="store_true", help="List chunk history")
+    group.add_argument("--expell-project",     metavar="ID",   help="Remove project from registry (files kept)")
+    group.add_argument("--delete-project",     metavar="ID",   help="Remove project from registry and delete files")
+    group.add_argument("--toggle-schema",      action="store_true",
+                        help="Toggle the persisted default chunk schema between '104' (Chunked-104) "
+                             "and '104db'. Remembered across runs until toggled again.")
+    group.add_argument("--toggle-chunk-in-target", action="store_true",
+                        help=f"Toggle the persisted Chunk-in-Target mode, which copies each chunk into "
+                             f"'{CHUNK_TARGET_DIRNAME}/' inside the target directory. Remembered across "
+                             f"runs until toggled again.")
+
+    parser.add_argument("--dest", metavar="DIR", help="Custom output directory for --unchunk")
+    parser.add_argument("--zip", action="store_true",
+                         help="For --unchunk/--unchunk-index: zip the restored output instead of "
+                              "leaving loose files on disk (produces <dest>.zip, removes the loose folder).")
+    parser.add_argument("--schema", choices=["104db", "104"], default=None,
+                         help="One-off override of the schema for this --chunk / --chunk-index run "
+                              "(default: uses the persisted toggle set by --toggle-schema, '104' out of the box). "
+                              "'104db' is the legacy multi-record format. --patterns/--exclude-patterns apply to '104' only.")
+    parser.add_argument("--patterns", metavar="EXT_LIST",
+                         help="Comma-separated custom file extensions to include, e.g. '.py,.md' "
+                              "(only used with --schema 104; overrides the default extension list).")
+    parser.add_argument("--exclude-patterns", metavar="DIR_LIST",
+                         help="Comma-separated custom directory names to exclude, e.g. '.git,dist' "
+                              "(only used with --schema 104; overrides the default exclude list).")
+    parser.add_argument("--context", metavar="TEXT", default=None,
+                         help="Contextualize Chunk: for this --chunk / --chunk-index run, write TEXT into "
+                              f"the target directory as '{CONTEXT_FILENAME}' before chunking, so it's the "
+                              "first record in the resulting chunk.")
+    parser.add_argument("--chunk-in-target", dest="chunk_in_target_override", action="store_true", default=None,
+                         help=f"One-off: for this --chunk / --chunk-index run, also copy the resulting chunk "
+                              f"into '{CHUNK_TARGET_DIRNAME}/' inside the target directory, regardless of the "
+                              f"persisted Chunk-in-Target setting.")
+
+    args = parser.parse_args()
+
+    custom_extensions   = _parse_csv_patterns(args.patterns)
+    custom_exclude_dirs = _parse_csv_patterns(args.exclude_patterns)
+    effective_schema     = args.schema if args.schema is not None else load_default_schema()
+    effective_chunk_in_target = (
+        args.chunk_in_target_override if args.chunk_in_target_override is not None else load_chunk_in_target()
+    )
+
+    if args.toggle_schema:
+        toggle_default_schema()
+    elif args.toggle_chunk_in_target:
+        toggle_chunk_in_target()
+    elif args.list_chunk_index or args.list_project_index:
+        list_chunk_index()
+    elif args.list_unchunk_index:
+        list_unchunk_index()
+    elif args.chunk:
+        run_chunk(args.chunk, schema=effective_schema, extensions=custom_extensions, exclude_dirs=custom_exclude_dirs,
+                   context_text=args.context, chunk_in_target=effective_chunk_in_target)
+    elif args.chunk_index:
+        source_path = resolve_registry_path(args.chunk_index)
+        if source_path:
+            run_chunk(source_path, schema=effective_schema, extensions=custom_extensions, exclude_dirs=custom_exclude_dirs,
+                       context_text=args.context, chunk_in_target=effective_chunk_in_target)
         else:
             print(f"Error: Project ID {args.chunk_index} not found in registry.")
     elif args.unchunk:
