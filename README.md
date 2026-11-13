@@ -2,7 +2,7 @@
 
 Ground-up, asynchronous AI coding assistant, autonomous task execution engine, and multi-interface orchestration platform featuring dual REST and Gemini Interactions API drivers, dynamic OpenRouter catalog discovery, subagent delegation, zero-leakage in-memory key resolution, BEJSON/MFDB local-first persistence, 57-column positional terminal user interfaces, and an offline web tooling suite.
 
-[![Build Status](https://img.shields.io/badge/Build-Passing%20%28167%20Tests%29-brightgreen.svg)]()
+[![Build Status](https://img.shields.io/badge/Build-Passing%20%28213%20Tests%29-brightgreen.svg)]()
 [![Version](https://img.shields.io/badge/Release-v1.2.15%20%7C%20PKG%20135-blue.svg)]()
 [![Architecture](https://img.shields.io/badge/Architecture-Dual%20Engine%20%28REST%20%2B%20Interactions%29-blueviolet.svg)]()
 [![Persistence](https://img.shields.io/badge/Persistence-BEJSON%20104a%20%7C%20MFDB%20v1.40-orange.svg)]()
@@ -66,10 +66,6 @@ export SECURE_ENV_PATH="/path/to/your/secureenv_file.json"
 
 # Path to your non-sensitive system definitions and paths
 export DEFINITIONS_PATH="/path/to/your/definitions.json"
-
-# Optional: Default CMS admin credentials for bundled web tools
-export CMS_USER="admin"
-export CMS_PASSWORD="your-strong-password"
 ```
 
 ---
@@ -147,72 +143,44 @@ The Notes tab provides a scratchpad for cross-session developer notes that autom
 ---
 
 ![WebAgent Configuration Controls](images/screenshots/04_webagent_config_tab.png)
-*_Figure 4: WebAgent Live Configuration Tab_*
+*_Figure 4: WebAgent 67-Option Configuration Control (All Categories)_*
 
-The Configuration panel allows real-time inspection and adjustment of model parameters, execution gates, and compatibility flags.
+The Configuration panel allows real-time inspection and adjustment of model parameters, execution gates, and compatibility flags across all 67 options and 3 BEJSON 104a stores.
 
 ---
 
-![JobMaker Offline Creation Dashboard](images/screenshots/05_jobmaker_default.png)
-*_Figure 5: JobMaker Task Workflow Dashboard (`JobMaker.py`)_*
+![WebAgent Category Filtering](images/screenshots/05_webagent_config_category.png)
+*_Figure 5: WebAgent Category Filtering (BUB Context Bubble)_*
+
+Operators can filter configuration options by domain category pills (`ENG`, `AUT`, `MEM`, `EXT`, `SYS`, `BUB`, `CLI`) to isolate specific subsystems such as Context Bubble constants.
+
+---
+
+![WebAgent Config Search and Diagnostics](images/screenshots/06_webagent_config_search.png)
+*_Figure 6: WebAgent Config Search & 104a Schema Validation Diagnostics_*
+
+Instant full-text keyword searching pairs with one-click BEJSON 104a schema validation, directory probing, and automated configuration snapshot backups.
+
+---
+
+![WebAgent Files Browser](images/screenshots/07_webagent_files_tab.png)
+*_Figure 7: WebAgent Directory & Files Browser_*
+
+The Files tab provides an integrated workspace navigator with quick jumps, breadcrumb tracking, and multi-file attachment management for contextual agent turns.
+
+---
+
+![JobMaker Offline Creation Dashboard](images/screenshots/08_jobmaker_default.png)
+*_Figure 8: JobMaker Task Workflow Dashboard (`JobMaker.py`)_*
 
 JobMaker provides a clean interface to author, name, and stage multi-task autonomous job manifests with goal specifications.
 
 ---
 
-![JobMaker Populated Task List](images/screenshots/06_jobmaker_populated.png)
-*_Figure 6: JobMaker Populated Task List with Audit Flags_*
+![JobMaker Populated Task List](images/screenshots/09_jobmaker_populated.png)
+*_Figure 9: JobMaker Populated Task List with Audit Flags_*
 
 Task cards can be ordered, flagged for automated post-task quality audits, and persisted directly to the jobs directory as BEJSON 104a schemas.
-
----
-
-![NewAgent CMS Admin Hub](images/screenshots/07_cms_admin_dashboard.png)
-*_Figure 7: NewAgent CMS Admin Hub Dashboard (`tools/NA-CMS/`)*_
-
-The bundled NewAgent CMS tool features a modular multi-cube architecture governing site records, database manifests, and storage integrity.
-
----
-
-![NewAgent CMS Content Manager](images/screenshots/08_cms_admin_pages.png)
-*_Figure 8: NewAgent CMS Content & Pages Interface_*
-
-The Content cube manages structured publication documents, categories, and author metadata stored in local-first MFDB tables.
-
----
-
-![NewAgent CMS Media Library](images/screenshots/09_cms_admin_media.png)
-*_Figure 9: NewAgent CMS Media Library & Asset Manager_*
-
-The Media cube organizes static assets, image dropzones, and thumbnail caches with content-hashed file storage.
-
----
-
-![NewAgent CMS Interface & Navigation](images/screenshots/10_cms_admin_menus.png)
-*_Figure 10: NewAgent CMS Navigation & Interface Settings_*
-
-The Interface cube configures site navigation trees, drawer menus, and spatial design layouts across publication themes.
-
----
-
-![NewAgent CMS Site Configuration](images/screenshots/11_cms_admin_config.png)
-*_Figure 11: NewAgent CMS Site Configuration Registry_*
-
-The Site Configuration view exposes persistent operational variables and debug toggles backed by atomic BEJSON 104a writes.
-
----
-
-![NewAgent CMS Publisher Dashboard](images/screenshots/12_cms_publisher_dashboard.png)
-*_Figure 12: NewAgent CMS Static Site Publisher Dashboard_*
-
-The Publisher dashboard monitors static export pipelines, stylesheet selections, and deployment targets.
-
----
-
-![NewAgent CMS Build & Preview Console](images/screenshots/13_cms_publisher_build.png)
-*_Figure 13: NewAgent CMS Build & Preview Console (`/publish`)*_
-
-The Build Console triggers static site generation, executes pre-publish validation gates, and runs local HTTP preview servers.
 
 ---
 
@@ -348,7 +316,6 @@ Built strictly to the **BEJSON Positional Telemetry Discipline**, `config_manage
 
 The `tools/` directory hosts modular standalone tools that share core runtime libraries without duplicate dependency copies:
 
-- **`tools/NA-CMS`**: Full-featured static publishing CMS and MFDB database manager.
 - **`tools/NA-Chunker`**: High-speed repository and directory chunking utility for BEJSON text archives.
 - **`tools/NA-MD2HTML`**: Standalone Markdown-to-BEHTML compiler with responsive grid formatting.
 - **`tools/NA-WebToolkit`**: Playwright and Chromium-backed web scraper and asset extractor.
@@ -429,7 +396,7 @@ NewAgent includes an automated test harness covering concurrency, security, sche
 ```bash
 python3 -m pytest tests/ -q
 ```
-*Current test suite status: **167 passed**.*
+*Current test suite status: **213 passed**.*
 
 ### Running Automated Playwright Browser Tests
 NewAgent uses native Termux Playwright (`termux_playwright`) to test its web interfaces without external dependencies:
@@ -438,10 +405,10 @@ NewAgent uses native Termux Playwright (`termux_playwright`) to test its web int
 python3 run_flask_playwright_suite.py
 ```
 This suite automatically:
-1. Boots `webagent.py`, `JobMaker.py`, `NewAgent_CMS_Admin.py`, and `NewAgent_CMS_Publisher.py` on dedicated ports.
-2. Awaits HTTP readiness and authenticates via security tokens and Basic Auth.
-3. Executes automated UI navigation, clicks interactive tabs, and populates form fields.
-4. Captures full-page screenshots into `agds/` and mirrors downscaled 420px assets to `images/screenshots/`.
+1. Boots `webagent.py` and `JobMaker.py` on dedicated loopback ports.
+2. Awaits HTTP readiness and authenticates via security tokens.
+3. Executes automated UI navigation, clicks interactive tabs (Terminal, Jobs, Notes, Config, Files), tests category filtering (`BUB`), keyword searching, and schema validation.
+4. Captures full-page screenshots into `agds/`, mirrors full-resolution assets to `images/flask_snapshots/`, and generates 420px responsive assets in `images/screenshots/`.
 5. Reaps all server subprocesses and browser instances cleanly upon completion.
 
 ---

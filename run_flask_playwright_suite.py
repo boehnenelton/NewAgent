@@ -2,14 +2,18 @@
 """
 Script:         run_flask_playwright_suite.py
 Family:         NewAgent
-Description:    Playwright automated test suite for NewAgent Flask tools.
-                Starts webagent.py, JobMaker.py, NewAgent_CMS_Admin.py, and
-                NewAgent_CMS_Publisher.py on dedicated ports, tests their routes
-                and interactive tabs via termux_playwright, captures snapshots,
-                and stores them in agds/.
+Description:    Playwright automated test suite for NewAgent Flask tools
+                (webagent.py and JobMaker.py). Tests interactive terminal,
+                settings overlay, jobs tab, persistent notes editor, 67-option
+                configuration tab across 7 categories and 3 stores, live search
+                filtering, BEJSON 104a schema validation, files browser, and
+                JobMaker task workflow. Captures snapshots in agds/, mirrors to
+                images/flask_snapshots/, and generates 420px responsive images
+                in images/screenshots/ for repository documentation.
 Author:         Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
-Date:           2026-10-24
-Version:        1.0.0
+Date:           2026-11-13
+Version:        2.0.0
+License:        PolyForm-Noncommercial-1.0.0
 RELATIONAL_ID:  a7b4c102-5e8f-4d93-9c2b-1a0f8e3d5c7b
 """
 
@@ -22,43 +26,50 @@ import socket
 import subprocess
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(SCRIPT_DIR / "lib"))
+from PIL import Image
 
-import lib_bejson_newagent_config as config_lib
+SCRIPT_DIRECTORY_PATH = Path(__file__).resolve().parent
+sys.path.insert(0, str(SCRIPT_DIRECTORY_PATH / "lib"))
+
+import lib_bejson_newagent_config as config_library
 from termux_playwright import async_playwright_termux, launch
 
-AGDS_DIR = SCRIPT_DIR / "agds"
-IMAGES_MIRROR_DIR = SCRIPT_DIR / "images" / "flask_snapshots"
+AGDS_DIRECTORY_PATH = SCRIPT_DIRECTORY_PATH / "agds"
+IMAGES_MIRROR_DIRECTORY_PATH = SCRIPT_DIRECTORY_PATH / "images" / "flask_snapshots"
+IMAGES_SCREENSHOTS_DIRECTORY_PATH = SCRIPT_DIRECTORY_PATH / "images" / "screenshots"
 
-PORT_WEBAGENT = 5181
-PORT_JOBMAKER = 5182
-PORT_CMS_ADMIN = 5183
-PORT_CMS_PUBLISHER = 5184
-
-
-def is_port_open(port: int, host: str = "127.0.0.1") -> bool:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.settimeout(0.5)
-        return sock.connect_ex((host, port)) == 0
+PORT_WEBAGENT_SERVER: int = 5181
+PORT_JOBMAKER_SERVER: int = 5182
 
 
-def wait_until_responsive(url: str, timeout: float = 20.0, auth_header: str | None = None) -> bool:
-    start_time = time.time()
-    while time.time() - start_time < timeout:
+def check_is_port_in_use(port_number: int, host_name: str = "127.0.0.1") -> bool:
+    """Check if the specified host port is open and accepting TCP connections."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe_socket:
+        probe_socket.settimeout(0.5)
+        return probe_socket.connect_ex((host_name, port_number)) == 0
+
+
+def wait_until_endpoint_responsive(
+    endpoint_target_url: str,
+    timeout_duration_seconds: float = 20.0,
+    authorization_header_value: str | None = None,
+) -> bool:
+    """Poll endpoint_target_url until HTTP response status code indicates server readiness."""
+    start_timestamp_seconds = time.time()
+    while time.time() - start_timestamp_seconds < timeout_duration_seconds:
         try:
-            req = urllib.request.Request(url)
-            if auth_header:
-                req.add_header("Authorization", auth_header)
-            with urllib.request.urlopen(req, timeout=1.5) as resp:
-                if resp.status in (200, 302):
+            http_request_object = urllib.request.Request(endpoint_target_url)
+            if authorization_header_value:
+                http_request_object.add_header("Authorization", authorization_header_value)
+            with urllib.request.urlopen(http_request_object, timeout=1.5) as http_response_object:
+                if http_response_object.status in (200, 302):
                     return True
-        except urllib.error.HTTPError as http_err:
-            if http_err.code in (200, 302, 401):
+        except urllib.error.HTTPError as caught_http_error:
+            if caught_http_error.code in (200, 302, 401):
                 return True
         except Exception:
             pass
@@ -66,245 +77,254 @@ def wait_until_responsive(url: str, timeout: float = 20.0, auth_header: str | No
     return False
 
 
+def resize_screenshot_to_responsive_standard(
+    source_snapshot_path: Path,
+    destination_target_path: Path,
+    target_width_pixels: int = 420,
+) -> None:
+    """Resize captured screenshot to responsive standard width maintaining aspect ratio."""
+    with Image.open(source_snapshot_path) as source_image_object:
+        original_width, original_height = source_image_object.size
+        scaled_height_pixels = int(target_width_pixels / original_width * original_height)
+        resized_image_object = source_image_object.resize(
+            (target_width_pixels, scaled_height_pixels),
+            resample=Image.Resampling.LANCZOS,
+        )
+        resized_image_object.save(destination_target_path, optimize=True)
+
+
 async def execute_playwright_tests() -> int:
-    AGDS_DIR.mkdir(parents=True, exist_ok=True)
-    IMAGES_MIRROR_DIR.mkdir(parents=True, exist_ok=True)
+    """Execute end-to-end Playwright tests across webagent.py and JobMaker.py."""
+    AGDS_DIRECTORY_PATH.mkdir(parents=True, exist_ok=True)
+    IMAGES_MIRROR_DIRECTORY_PATH.mkdir(parents=True, exist_ok=True)
+    IMAGES_SCREENSHOTS_DIRECTORY_PATH.mkdir(parents=True, exist_ok=True)
 
-    config_path = SCRIPT_DIR / "config" / "config.json"
-    cfg = config_lib.init_config(config_path)
-    web_token = config_lib.get_or_create_web_auth_token(config_path, cfg)
+    config_json_file_path = SCRIPT_DIRECTORY_PATH / "config" / "config.json"
+    configuration_dictionary = config_library.init_config(config_json_file_path)
+    web_authentication_token = config_library.get_or_create_web_auth_token(
+        config_json_file_path, configuration_dictionary
+    )
 
-    servers: list[subprocess.Popen] = []
-    env_base = os.environ.copy()
-    env_base["PYTHONUNBUFFERED"] = "1"
-    env_base["CMS_USER"] = "admin"
-    env_base["CMS_PASSWORD"] = "changeme"
+    spawned_servers_list: list[subprocess.Popen] = []
+    base_process_environment = os.environ.copy()
+    base_process_environment["PYTHONUNBUFFERED"] = "1"
 
-    print("[1/5] Launching Flask tools...")
-    # 1. webagent.py
-    proc_webagent = subprocess.Popen(
-        [sys.executable, str(SCRIPT_DIR / "webagent.py"), "--host", "127.0.0.1", "--port", str(PORT_WEBAGENT)],
-        cwd=str(SCRIPT_DIR),
-        env=env_base,
+    print("[1/5] Launching Flask tools (webagent.py & JobMaker.py)...")
+    # 1. webagent.py on PORT_WEBAGENT_SERVER
+    process_webagent = subprocess.Popen(
+        [
+            sys.executable,
+            str(SCRIPT_DIRECTORY_PATH / "webagent.py"),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(PORT_WEBAGENT_SERVER),
+        ],
+        cwd=str(SCRIPT_DIRECTORY_PATH),
+        env=base_process_environment,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    servers.append(proc_webagent)
+    spawned_servers_list.append(process_webagent)
 
-    # 2. JobMaker.py
-    env_jobmaker = env_base.copy()
-    env_jobmaker["JOBMAKER_PORT"] = str(PORT_JOBMAKER)
-    proc_jobmaker = subprocess.Popen(
-        [sys.executable, str(SCRIPT_DIR / "JobMaker.py")],
-        cwd=str(SCRIPT_DIR),
-        env=env_jobmaker,
+    # 2. JobMaker.py on PORT_JOBMAKER_SERVER
+    jobmaker_process_environment = base_process_environment.copy()
+    jobmaker_process_environment["JOBMAKER_PORT"] = str(PORT_JOBMAKER_SERVER)
+    process_jobmaker = subprocess.Popen(
+        [sys.executable, str(SCRIPT_DIRECTORY_PATH / "JobMaker.py")],
+        cwd=str(SCRIPT_DIRECTORY_PATH),
+        env=jobmaker_process_environment,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    servers.append(proc_jobmaker)
-
-    # 3. NewAgent_CMS_Admin.py
-    env_cms_admin = env_base.copy()
-    env_cms_admin["CMS_ADMIN_PORT"] = str(PORT_CMS_ADMIN)
-    cms_web_dir = SCRIPT_DIR / "tools" / "NA-CMS" / "src" / "web"
-    proc_cms_admin = subprocess.Popen(
-        [sys.executable, str(cms_web_dir / "NewAgent_CMS_Admin.py")],
-        cwd=str(cms_web_dir),
-        env=env_cms_admin,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    servers.append(proc_cms_admin)
-
-    # 4. NewAgent_CMS_Publisher.py
-    env_cms_pub = env_base.copy()
-    env_cms_pub["CMS_PUBLISHER_PORT"] = str(PORT_CMS_PUBLISHER)
-    proc_cms_pub = subprocess.Popen(
-        [sys.executable, str(cms_web_dir / "NewAgent_CMS_Publisher.py")],
-        cwd=str(cms_web_dir),
-        env=env_cms_pub,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    servers.append(proc_cms_pub)
+    spawned_servers_list.append(process_jobmaker)
 
     try:
         print("[2/5] Waiting for Flask servers to respond...")
-        basic_auth_val = "Basic YWRtaW46Y2hhbmdlbWU="  # admin:changeme
+        webagent_target_url = (
+            f"http://127.0.0.1:{PORT_WEBAGENT_SERVER}/?token={web_authentication_token}&skip_boot=1"
+        )
+        jobmaker_target_url = (
+            f"http://127.0.0.1:{PORT_JOBMAKER_SERVER}/?token={web_authentication_token}"
+        )
 
-        assert wait_until_responsive(f"http://127.0.0.1:{PORT_WEBAGENT}/?token={web_token}&skip_boot=1"), "webagent timeout"
-        assert wait_until_responsive(f"http://127.0.0.1:{PORT_JOBMAKER}/?token={web_token}"), "JobMaker timeout"
-        assert wait_until_responsive(f"http://127.0.0.1:{PORT_CMS_ADMIN}/", auth_header=basic_auth_val), "CMS Admin timeout"
-        assert wait_until_responsive(f"http://127.0.0.1:{PORT_CMS_PUBLISHER}/", auth_header=basic_auth_val), "CMS Publisher timeout"
-        print(" -> All 4 Flask tools are responsive!")
+        assert wait_until_endpoint_responsive(webagent_target_url), "webagent.py startup timeout"
+        assert wait_until_endpoint_responsive(jobmaker_target_url), "JobMaker.py startup timeout"
+        print(" -> Both Flask servers (webagent & JobMaker) are responsive!")
 
-        print("[3/5] Starting Playwright browser in Termux...")
-        snapshots_taken: list[str] = []
+        print("[3/5] Starting Playwright browser in Termux ARM64...")
+        captured_snapshots_list: list[str] = []
 
-        async with async_playwright_termux() as playwright_instance:
-            browser = await launch(playwright_instance, headless=True)
-            page = await browser.new_page(viewport={"width": 1280, "height": 840})
+        async with async_playwright_termux() as playwright_runtime_instance:
+            browser_instance = await launch(playwright_runtime_instance, headless=True)
+            browser_page_object = await browser_instance.new_page(
+                viewport={"width": 1280, "height": 840}
+            )
 
             # --- Tool 1: webagent.py ---
             print(" -> Testing Tool 1: webagent.py")
-            webagent_url = f"http://127.0.0.1:{PORT_WEBAGENT}/?token={web_token}&skip_boot=1"
-            await page.goto(webagent_url, timeout=30000, wait_until="domcontentloaded")
-            await page.wait_for_selector("#terminal", timeout=10000)
-            snap_1 = str(AGDS_DIR / "01_webagent_terminal.png")
-            await page.screenshot(path=snap_1, full_page=True)
-            snapshots_taken.append(snap_1)
+            await browser_page_object.goto(
+                webagent_target_url, timeout=30000, wait_until="domcontentloaded"
+            )
+            await browser_page_object.wait_for_selector("#terminal", timeout=10000)
+
+            # 1. WebAgent Terminal Default View
+            snapshot_path_01 = str(AGDS_DIRECTORY_PATH / "01_webagent_terminal.png")
+            await browser_page_object.screenshot(path=snapshot_path_01, full_page=True)
+            captured_snapshots_list.append(snapshot_path_01)
 
             # Open Settings overlay
-            await page.click("#header-settings-btn")
-            await page.wait_for_selector("#gui-overlay", state="visible", timeout=5000)
+            await browser_page_object.click("#header-settings-btn")
+            await browser_page_object.wait_for_selector("#gui-overlay", state="visible", timeout=5000)
 
-            # Jobs tab
-            await page.click('.tab-button[data-tab="tab-jobs"]')
-            await page.wait_for_timeout(400)
-            snap_2 = str(AGDS_DIR / "02_webagent_jobs_tab.png")
-            await page.screenshot(path=snap_2, full_page=True)
-            snapshots_taken.append(snap_2)
+            # 2. Jobs Tab
+            await browser_page_object.click('.tab-button[data-tab="tab-jobs"]')
+            await browser_page_object.wait_for_selector("#job-active-badge", timeout=5000)
+            await browser_page_object.wait_for_timeout(400)
+            snapshot_path_02 = str(AGDS_DIRECTORY_PATH / "02_webagent_jobs_tab.png")
+            await browser_page_object.screenshot(path=snapshot_path_02, full_page=True)
+            captured_snapshots_list.append(snapshot_path_02)
 
-            # Notes tab
-            await page.click('.tab-button[data-tab="tab-notes"]')
-            await page.wait_for_selector("#notes-textarea", timeout=5000)
-            await page.fill("#notes-textarea", "Playwright verification active -- NewAgent tool suite verified!")
-            await page.wait_for_timeout(400)
-            snap_3 = str(AGDS_DIR / "03_webagent_notes_tab.png")
-            await page.screenshot(path=snap_3, full_page=True)
-            snapshots_taken.append(snap_3)
+            # 3. Notes Tab
+            await browser_page_object.click('.tab-button[data-tab="tab-notes"]')
+            await browser_page_object.wait_for_selector("#notes-textarea", timeout=5000)
+            await browser_page_object.fill(
+                "#notes-textarea",
+                "Playwright automated verification: webagent.py 0.14.0 active with 67 options.",
+            )
+            await browser_page_object.wait_for_timeout(400)
+            snapshot_path_03 = str(AGDS_DIRECTORY_PATH / "03_webagent_notes_tab.png")
+            await browser_page_object.screenshot(path=snapshot_path_03, full_page=True)
+            captured_snapshots_list.append(snapshot_path_03)
 
-            # Config tab
-            await page.click('.tab-button[data-tab="tab-config"]')
-            await page.wait_for_timeout(600)
-            snap_4 = str(AGDS_DIR / "04_webagent_config_tab.png")
-            await page.screenshot(path=snap_4, full_page=True)
-            snapshots_taken.append(snap_4)
+            # 4. Config Tab (ALL Categories - 67 Options)
+            await browser_page_object.click('.tab-button[data-tab="tab-config"]')
+            await browser_page_object.wait_for_selector("#config-summary-badge", timeout=5000)
+            await browser_page_object.wait_for_timeout(600)
+            snapshot_path_04 = str(AGDS_DIRECTORY_PATH / "04_webagent_config_tab.png")
+            await browser_page_object.screenshot(path=snapshot_path_04, full_page=True)
+            captured_snapshots_list.append(snapshot_path_04)
+
+            # 5. Config Tab - Category Filtering (BUB Category)
+            await browser_page_object.click('.config-cat-pill:has-text("BUB")')
+            await browser_page_object.wait_for_timeout(400)
+            snapshot_path_05 = str(AGDS_DIRECTORY_PATH / "05_webagent_config_category.png")
+            await browser_page_object.screenshot(path=snapshot_path_05, full_page=True)
+            captured_snapshots_list.append(snapshot_path_05)
+
+            # 6. Config Tab - Search Filtering & 104a Validation Diagnostics
+            # Reset category to ALL
+            await browser_page_object.click('.config-cat-pill:has-text("ALL")')
+            await browser_page_object.wait_for_timeout(200)
+
+            await browser_page_object.fill("#config-search-input", "dryrun")
+            await browser_page_object.wait_for_timeout(300)
+            await browser_page_object.click("#config-validate-btn")
+            await browser_page_object.wait_for_selector(
+                "#config-diagnostics-box", state="visible", timeout=5000
+            )
+            await browser_page_object.wait_for_timeout(400)
+            snapshot_path_06 = str(AGDS_DIRECTORY_PATH / "06_webagent_config_search.png")
+            await browser_page_object.screenshot(path=snapshot_path_06, full_page=True)
+            captured_snapshots_list.append(snapshot_path_06)
+
+            # 7. Files Tab (Directory Browser)
+            await browser_page_object.click('.tab-button[data-tab="tab-files"]')
+            await browser_page_object.wait_for_selector("#file-path-input", timeout=5000)
+            await browser_page_object.wait_for_timeout(400)
+            snapshot_path_07 = str(AGDS_DIRECTORY_PATH / "07_webagent_files_tab.png")
+            await browser_page_object.screenshot(path=snapshot_path_07, full_page=True)
+            captured_snapshots_list.append(snapshot_path_07)
 
             # Close GUI overlay
-            await page.click("#close-btn")
-            await page.wait_for_timeout(300)
+            await browser_page_object.click("#close-btn")
+            await browser_page_object.wait_for_timeout(300)
 
             # --- Tool 2: JobMaker.py ---
             print(" -> Testing Tool 2: JobMaker.py")
-            jobmaker_url = f"http://127.0.0.1:{PORT_JOBMAKER}/?token={web_token}"
-            await page.goto(jobmaker_url, timeout=30000, wait_until="domcontentloaded")
-            await page.wait_for_selector("#jobName", timeout=10000)
-            snap_5 = str(AGDS_DIR / "05_jobmaker_default.png")
-            await page.screenshot(path=snap_5, full_page=True)
-            snapshots_taken.append(snap_5)
+            await browser_page_object.goto(
+                jobmaker_target_url, timeout=30000, wait_until="domcontentloaded"
+            )
+            await browser_page_object.wait_for_selector("#jobName", timeout=10000)
+            snapshot_path_08 = str(AGDS_DIRECTORY_PATH / "08_jobmaker_default.png")
+            await browser_page_object.screenshot(path=snapshot_path_08, full_page=True)
+            captured_snapshots_list.append(snapshot_path_08)
 
             # Populate JobMaker fields and add tasks
-            await page.fill("#jobName", "Playwright Automation Audit Job")
-            await page.fill("#jobGoal", "Verify and capture multi-tool Flask browser states on Termux.")
-            await page.click("#addTaskBtn")
-            await page.wait_for_timeout(200)
-            await page.click("#addTaskBtn")
-            await page.wait_for_timeout(300)
-            snap_6 = str(AGDS_DIR / "06_jobmaker_populated.png")
-            await page.screenshot(path=snap_6, full_page=True)
-            snapshots_taken.append(snap_6)
-
-            # --- Tool 3: NewAgent_CMS_Admin.py ---
-            print(" -> Testing Tool 3: NewAgent_CMS_Admin.py")
-            admin_ctx = await browser.new_context(
-                http_credentials={"username": "admin", "password": "changeme"},
-                viewport={"width": 1280, "height": 840},
+            await browser_page_object.fill("#jobName", "Playwright Verification Audit Job")
+            await browser_page_object.fill(
+                "#jobGoal",
+                "Verify and capture full-screen UI states across webagent.py and JobMaker.py.",
             )
-            admin_page = await admin_ctx.new_page()
+            await browser_page_object.click("#addTaskBtn")
+            await browser_page_object.wait_for_timeout(200)
+            await browser_page_object.click("#addTaskBtn")
+            await browser_page_object.wait_for_timeout(300)
+            snapshot_path_09 = str(AGDS_DIRECTORY_PATH / "09_jobmaker_populated.png")
+            await browser_page_object.screenshot(path=snapshot_path_09, full_page=True)
+            captured_snapshots_list.append(snapshot_path_09)
 
-            # Dashboard
-            await admin_page.goto(f"http://127.0.0.1:{PORT_CMS_ADMIN}/", timeout=30000, wait_until="domcontentloaded")
-            await admin_page.wait_for_timeout(600)
-            snap_7 = str(AGDS_DIR / "07_cms_admin_dashboard.png")
-            await admin_page.screenshot(path=snap_7, full_page=True)
-            snapshots_taken.append(snap_7)
+            await browser_instance.close()
 
-            # Pages / Content
-            await admin_page.goto(f"http://127.0.0.1:{PORT_CMS_ADMIN}/pages", timeout=30000, wait_until="domcontentloaded")
-            await admin_page.wait_for_timeout(600)
-            snap_8 = str(AGDS_DIR / "08_cms_admin_pages.png")
-            await admin_page.screenshot(path=snap_8, full_page=True)
-            snapshots_taken.append(snap_8)
+        print("[4/5] Mirroring snapshots & generating 420px responsive screenshots...")
+        # Clean up stale CMS files in destinations
+        for candidate_stale_path in (
+            list(AGDS_DIRECTORY_PATH.glob("*cms*"))
+            + list(IMAGES_MIRROR_DIRECTORY_PATH.glob("*cms*"))
+            + list(IMAGES_SCREENSHOTS_DIRECTORY_PATH.glob("*cms*"))
+        ):
+            try:
+                candidate_stale_path.unlink()
+            except Exception:
+                pass
 
-            # Media library
-            await admin_page.goto(f"http://127.0.0.1:{PORT_CMS_ADMIN}/media", timeout=30000, wait_until="domcontentloaded")
-            await admin_page.wait_for_timeout(600)
-            snap_9 = str(AGDS_DIR / "09_cms_admin_media.png")
-            await admin_page.screenshot(path=snap_9, full_page=True)
-            snapshots_taken.append(snap_9)
+        for raw_snapshot_path_string in captured_snapshots_list:
+            source_file_path = Path(raw_snapshot_path_string)
+            file_name_string = source_file_path.name
 
-            # Interface / Menus
-            await admin_page.goto(f"http://127.0.0.1:{PORT_CMS_ADMIN}/menus", timeout=30000, wait_until="domcontentloaded")
-            await admin_page.wait_for_timeout(600)
-            snap_10 = str(AGDS_DIR / "10_cms_admin_menus.png")
-            await admin_page.screenshot(path=snap_10, full_page=True)
-            snapshots_taken.append(snap_10)
+            # Mirror full-resolution copy
+            shutil.copy2(source_file_path, IMAGES_MIRROR_DIRECTORY_PATH / file_name_string)
 
-            # Site Config
-            await admin_page.goto(f"http://127.0.0.1:{PORT_CMS_ADMIN}/config", timeout=30000, wait_until="domcontentloaded")
-            await admin_page.wait_for_timeout(600)
-            snap_11 = str(AGDS_DIR / "11_cms_admin_config.png")
-            await admin_page.screenshot(path=snap_11, full_page=True)
-            snapshots_taken.append(snap_11)
+            # Resize to responsive standard width (420px)
+            scaled_target_path = IMAGES_SCREENSHOTS_DIRECTORY_PATH / file_name_string
+            resize_screenshot_to_responsive_standard(source_file_path, scaled_target_path, 420)
 
-            await admin_ctx.close()
-
-            # --- Tool 4: NewAgent_CMS_Publisher.py ---
-            print(" -> Testing Tool 4: NewAgent_CMS_Publisher.py")
-            pub_ctx = await browser.new_context(
-                http_credentials={"username": "admin", "password": "changeme"},
-                viewport={"width": 1280, "height": 840},
+        print(
+            f"[5/5] Success! Captured and processed {len(captured_snapshots_list)} snapshots:"
+        )
+        for snapshot_index_counter, snapshot_file_path_string in enumerate(
+            captured_snapshots_list, 1
+        ):
+            snapshot_file_path = Path(snapshot_file_path_string)
+            print(
+                f"  {snapshot_index_counter:02d}. {snapshot_file_path.name} "
+                f"({snapshot_file_path.stat().st_size} bytes, "
+                f"scaled: {(IMAGES_SCREENSHOTS_DIRECTORY_PATH / snapshot_file_path.name).stat().st_size} bytes)"
             )
-            pub_page = await pub_ctx.new_page()
-
-            # Publisher Dashboard
-            await pub_page.goto(f"http://127.0.0.1:{PORT_CMS_PUBLISHER}/", timeout=30000, wait_until="domcontentloaded")
-            await pub_page.wait_for_timeout(600)
-            snap_12 = str(AGDS_DIR / "12_cms_publisher_dashboard.png")
-            await pub_page.screenshot(path=snap_12, full_page=True)
-            snapshots_taken.append(snap_12)
-
-            # Publisher Build Console (/publish)
-            await pub_page.goto(f"http://127.0.0.1:{PORT_CMS_PUBLISHER}/publish", timeout=30000, wait_until="domcontentloaded")
-            await pub_page.wait_for_timeout(600)
-            snap_13 = str(AGDS_DIR / "13_cms_publisher_build.png")
-            await pub_page.screenshot(path=snap_13, full_page=True)
-            snapshots_taken.append(snap_13)
-
-            await pub_ctx.close()
-            await browser.close()
-
-        print("[4/5] Mirroring snapshots to images/flask_snapshots/...")
-        for snap_path_str in snapshots_taken:
-            shutil.copy2(snap_path_str, IMAGES_MIRROR_DIR / Path(snap_path_str).name)
-
-        print(f"[5/5] Success! Captured {len(snapshots_taken)} snapshots in {AGDS_DIR}/:")
-        for idx, s in enumerate(snapshots_taken, 1):
-            print(f"  {idx:02d}. {Path(s).name} ({Path(s).stat().st_size} bytes)")
 
         return 0
 
     finally:
         print("Tearing down Flask test servers...")
-        for proc in servers:
+        for running_server_process in spawned_servers_list:
             try:
-                proc.terminate()
-                proc.wait(timeout=2)
+                running_server_process.terminate()
+                running_server_process.wait(timeout=2)
             except Exception:
                 try:
-                    proc.kill()
+                    running_server_process.kill()
                 except Exception:
                     pass
+
         # Preserve test_web_auth_token_blank shipping hygiene
         try:
-            curr_cfg = config_lib.init_config(config_path)
-            curr_cfg["web_auth_token"] = ""
-            config_lib.save_config(config_path, curr_cfg)
+            current_configuration_dictionary = config_library.init_config(config_json_file_path)
+            current_configuration_dictionary["web_auth_token"] = ""
+            config_library.save_config(config_json_file_path, current_configuration_dictionary)
         except Exception:
             pass
 
 
 if __name__ == "__main__":
-    rc = asyncio.run(execute_playwright_tests())
-    sys.exit(rc)
+    exit_return_code = asyncio.run(execute_playwright_tests())
+    sys.exit(exit_return_code)

@@ -1,1 +1,1 @@
-Playwright verification active -- NewAgent tool suite verified!
+Playwright automated verification: webagent.py 0.14.0 active with 67 options.
