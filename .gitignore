@@ -21,6 +21,7 @@ NewAgent.zip
 chunked5/
 backups/
 images/flask_snapshots/
+*.pid
 Context/Context_Bubble.md
 __pycache__/
 *.pyc

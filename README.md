@@ -121,63 +121,63 @@ NewAgent provides five coordinated operational surfaces:
 
 The following interface views illustrate NewAgent's operational surfaces, captured directly via automated Playwright test runs and scaled to the 420px responsive standard.
 
-![WebAgent Terminal Console](images/screenshots/01_webagent_terminal.png)
+![WebAgent Terminal Console](images/screenshots/01_webagent_terminal.webp)
 *_Figure 1: WebAgent Terminal & Chat Console (`webagent.py`)_*
 
 The WebAgent terminal provides authenticated browser access to NewAgent's execution engine, featuring live token/engine telemetry, command history, and direct shell execution escapes.
 
 ---
 
-![WebAgent Jobs Management Tab](images/screenshots/02_webagent_jobs_tab.png)
+![WebAgent Jobs Management Tab](images/screenshots/02_webagent_jobs_tab.webp)
 *_Figure 2: WebAgent Jobs Management Interface_*
 
 The Jobs tab lists pending and active BEJSON task cards, allowing operators to trigger multi-task agent jobs and monitor execution progress in real time.
 
 ---
 
-![WebAgent Persistent Notes Editor](images/screenshots/03_webagent_notes_tab.png)
+![WebAgent Persistent Notes Editor](images/screenshots/03_webagent_notes_tab.webp)
 *_Figure 3: WebAgent Auto-Saving Persistent Notes Tab_*
 
 The Notes tab provides a scratchpad for cross-session developer notes that automatically saves to disk without manual intervention.
 
 ---
 
-![WebAgent Configuration Controls](images/screenshots/04_webagent_config_tab.png)
+![WebAgent Configuration Controls](images/screenshots/04_webagent_config_tab.webp)
 *_Figure 4: WebAgent 67-Option Configuration Control (All Categories)_*
 
 The Configuration panel allows real-time inspection and adjustment of model parameters, execution gates, and compatibility flags across all 67 options and 3 BEJSON 104a stores.
 
 ---
 
-![WebAgent Category Filtering](images/screenshots/05_webagent_config_category.png)
+![WebAgent Category Filtering](images/screenshots/05_webagent_config_category.webp)
 *_Figure 5: WebAgent Category Filtering (BUB Context Bubble)_*
 
 Operators can filter configuration options by domain category pills (`ENG`, `AUT`, `MEM`, `EXT`, `SYS`, `BUB`, `CLI`) to isolate specific subsystems such as Context Bubble constants.
 
 ---
 
-![WebAgent Config Search and Diagnostics](images/screenshots/06_webagent_config_search.png)
+![WebAgent Config Search and Diagnostics](images/screenshots/06_webagent_config_search.webp)
 *_Figure 6: WebAgent Config Search & 104a Schema Validation Diagnostics_*
 
 Instant full-text keyword searching pairs with one-click BEJSON 104a schema validation, directory probing, and automated configuration snapshot backups.
 
 ---
 
-![WebAgent Files Browser](images/screenshots/07_webagent_files_tab.png)
+![WebAgent Files Browser](images/screenshots/07_webagent_files_tab.webp)
 *_Figure 7: WebAgent Directory & Files Browser_*
 
 The Files tab provides an integrated workspace navigator with quick jumps, breadcrumb tracking, and multi-file attachment management for contextual agent turns.
 
 ---
 
-![JobMaker Offline Creation Dashboard](images/screenshots/08_jobmaker_default.png)
+![JobMaker Offline Creation Dashboard](images/screenshots/08_jobmaker_default.webp)
 *_Figure 8: JobMaker Task Workflow Dashboard (`JobMaker.py`)_*
 
 JobMaker provides a clean interface to author, name, and stage multi-task autonomous job manifests with goal specifications.
 
 ---
 
-![JobMaker Populated Task List](images/screenshots/09_jobmaker_populated.png)
+![JobMaker Populated Task List](images/screenshots/09_jobmaker_populated.webp)
 *_Figure 9: JobMaker Populated Task List with Audit Flags_*
 
 Task cards can be ordered, flagged for automated post-task quality audits, and persisted directly to the jobs directory as BEJSON 104a schemas.

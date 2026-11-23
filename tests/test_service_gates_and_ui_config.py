@@ -1,11 +1,11 @@
 """
 Name:           test_service_gates_and_ui_config.py
 Description:    Verification suite for the gated modular service abstraction layers
-                (lib_bejson_newagent_service_gates.py), full 67-option / 7-category /
+                (lib_bejson_newagent_service_gates.py), full 69-option / 7-category /
                 3-store UI configuration control in webagent.py, and taxonomy /
                 identifier compliance across webagent.py, web_routes/*, and agent.py.
-Version:        1.0.0
-Date:           2026-11-12
+Version:        1.0.1
+Date:           2026-11-14
 Author:         Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
 License:        PolyForm-Noncommercial-1.0.0
 RELATIONAL_ID:  a17d4c83-9b2e-4f50-8c16-3e90d2a7b418
@@ -82,8 +82,8 @@ def _build_gated_test_app(tmp_path: Path):
     return flask_app, terminal_stub
 
 
-def test_full_67_options_7_categories_3_stores_exposed(tmp_path):
-    """Verify GET /api/config exposes all 67 options across 7 categories and 3 BEJSON 104a stores."""
+def test_full_69_options_7_categories_3_stores_exposed(tmp_path):
+    """Verify GET /api/config exposes all 69 options across 7 categories and 3 BEJSON 104a stores."""
     flask_app, _ = _build_gated_test_app(tmp_path)
     test_client = flask_app.test_client()
 
@@ -91,8 +91,8 @@ def test_full_67_options_7_categories_3_stores_exposed(tmp_path):
     assert response.status_code == 200
     payload = response.get_json()
 
-    assert payload["total_options"] == 67
-    assert len(payload["config"]) == 67
+    assert payload["total_options"] == 69
+    assert len(payload["config"]) == 69
     category_codes = [cat_item["code"] for cat_item in payload["categories"]]
     assert category_codes == ["ENG", "AUT", "MEM", "EXT", "SYS", "BUB", "CLI"]
 

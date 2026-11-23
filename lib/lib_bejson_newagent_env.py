@@ -8,10 +8,10 @@ Description:    Resolves NewAgent's environment sources against the split
                  (never modifies it -- Core family is off-limits) and adds
                  the BEJSON-doc-source resolution the key sync and context
                  drip code needs now that there are two files instead of one.
-Version:        1.1.0
-Date:           2026-08-16
+Version:        1.2.0
+Date:           2026-11-20
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
-RELATIONAL_ID:  f3a7c9d2-8e1b-4f6a-9c3d-2b5e7a1f9d84
+RELATIONAL_ID:  b6e6902f-39ad-4b65-b029-e8d5cab9e98e
 
 CHANGELOG:
 - 1.1.0 (2026-08-16): Added describe_env_sources() -- Elton reported 0 keys
@@ -83,6 +83,15 @@ def resolve_env_bejson_sources(config: dict) -> list[Path]:
     """
     secure_p = Path(config.get("env_secure_file_path", ""))
     paths_p = Path(config.get("env_paths_file_path", ""))
+    # 1.2.0 (2026-11-20): if the configured user-paths file is absent, try its
+    # sibling (definitions.json <-> paths.json) so a policy-named definitions.json
+    # is honoured on devices still configured for the legacy paths.json name.
+    if str(paths_p) not in ("", ".") and not paths_p.exists():
+        for alt_name in ("definitions.json", "paths.json"):
+            alt_p = paths_p.with_name(alt_name)
+            if alt_p != paths_p and alt_p.exists():
+                paths_p = alt_p
+                break
     new_sources = [p for p in (secure_p, paths_p) if str(p) not in ("", ".") and p.exists()]
     if new_sources:
         return new_sources

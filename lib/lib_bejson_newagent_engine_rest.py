@@ -288,13 +288,33 @@ DEFAULT_MODEL_CATALOG: list[list] = [
     [8, "gemini-3.6-flash", "Gemini 3.6 Flash", "flash", "GA",
      "Added 2026-07-22 (released 2026-07-21). Successor to 3.5 Flash, 17% fewer "
      "output tokens, $1.50/$7.50 per 1M. Same Gemini 3.x request rules as row 7.", "v3", "gemini"],
-    [9, "qwen3.6-35b", "Qwen 3.6 35B (Provocative)", "flash", "beta",
+    [9, "gemini-3.7-flash", "Gemini 3.7 Flash", "flash", "GA",
+     "High-efficiency agentic model for multi-step reasoning, coding, and tool calling.", "v3", "gemini"],
+    [10, "gemini-3.8-flash", "Gemini 3.8 Flash", "flash", "GA",
+     "Flagship agentic flash model; customizable thinkingLevel parameter.", "v3", "gemini"],
+    [11, "gemini-4-argon", "Gemini 4 Argon", "pro", "GA",
+     "Gemini 4 frontier reasoning, coding, and autonomous agent model.", "v3", "gemini"],
+    [12, "gemini-4-neon", "Gemini 4 Neon", "flash", "GA",
+     "Gemini 4 high-speed next-gen model with deep reasoning.", "v3", "gemini"],
+    [13, "gemini-4-hydrogen", "Gemini 4 Hydrogen", "flash-lite", "GA",
+     "Gemini 4 ultra-fast high-throughput lightweight tier.", "v3", "gemini"],
+    [14, "gemini-4-carbon", "Gemini 4 Carbon", "pro", "preview",
+     "Gemini 4 extended-context multimodal deep reasoning preview model.", "v3", "gemini"],
+    [15, "gemini-flash-latest", "Gemini Flash Latest", "flash", "GA",
+     "Dynamic pointer to Google's latest production Flash tier model.", "v3", "gemini"],
+    [16, "gemini-flash-lite-latest", "Gemini Flash-Lite Latest", "flash-lite", "GA",
+     "Dynamic pointer to Google's latest production Flash-Lite tier model.", "v3", "gemini"],
+    [17, "gemini-pro-latest", "Gemini Pro Latest", "pro", "GA",
+     "Dynamic pointer to Google's latest production Pro tier model.", "v3", "gemini"],
+    [18, "gemma-4-31b-it", "Gemma 4 31B IT", "flash", "GA",
+     "Google open-weights instruction-tuned 31B parameter model.", "v3", "gemini"],
+    [19, "qwen3.6-35b", "Qwen 3.6 35B (Provocative)", "flash", "beta",
      "OpenAI-compatible beta host, 262k context, thinking off by default. "
      "1,000,000 free tokens for first 100 users, key valid through 2026-08-27.",
      "legacy", "provocative"],
-    [10, "anthropic/claude-sonnet-5.5", "Claude Sonnet 5.5 (OpenRouter)", "pro", "GA",
+    [20, "anthropic/claude-sonnet-5.5", "Claude Sonnet 5.5 (OpenRouter)", "pro", "GA",
      "OpenRouter Claude Sonnet 5.5 flagship.", "legacy", "openrouter"],
-    [11, "liquid/lfm-2.5-2.6b:free", "Liquid LFM 2.5 2.6B Free (OpenRouter)", "flash", "GA",
+    [21, "liquid/lfm-2.5-2.6b:free", "Liquid LFM 2.5 2.6B Free (OpenRouter)", "flash", "GA",
      "OpenRouter free model tier.", "legacy", "openrouter"],
 ]
 
@@ -398,6 +418,74 @@ def _build_gemini_request(key, model, history, system_instruction, config, catal
     return url, headers, payload
 
 
+def sanitize_model_response(text: str, max_repeat_count: int = 5, max_length: int = 131072) -> str:
+    """
+    Circuit breaker to guard against catastrophic model repetition loops,
+    runaway hallucinated tags (e.g. repeated </exec_command> thousands of times),
+    and pathologically large responses that would poison conversation context.
+    """
+    if not text:
+        return ""
+
+    # 1. Hard cap first to avoid buffer exhaustion
+    if len(text) > max_length:
+        text = text[:max_length] + f"\n\n... [OUTPUT TRUNCATED: response exceeded {max_length} characters] ..."
+
+    # 2. Strict O(N) line-by-line repetition collapse
+    lines = text.split("\n")
+    if len(lines) > 8:
+        collapsed = []
+        repeat_line = None
+        count = 0
+        for line in lines:
+            stripped = line.strip()
+            if stripped and stripped == repeat_line:
+                count += 1
+                if count <= max_repeat_count:
+                    collapsed.append(line)
+            else:
+                if count > max_repeat_count:
+                    collapsed.append(
+                        f"... [REPETITION LOOP COLLAPSED: {count - max_repeat_count} repeated lines stripped] ..."
+                    )
+                repeat_line = stripped if stripped else None
+                count = 1 if stripped else 0
+                collapsed.append(line)
+        if count > max_repeat_count:
+            collapsed.append(
+                f"... [REPETITION LOOP COLLAPSED: {count - max_repeat_count} repeated lines stripped] ..."
+            )
+        lines = collapsed
+
+    # 3. Strict O(N) multi-line cyclic repeating pattern collapse
+    for window_size in (2, 3):
+        if len(lines) < window_size * 4:
+            continue
+        new_lines = []
+        idx = 0
+        while idx < len(lines):
+            pattern = lines[idx:idx + window_size]
+            if not any(pattern):
+                new_lines.append(lines[idx])
+                idx += 1
+                continue
+            repeat_cnt = 0
+            while idx + (repeat_cnt + 1) * window_size <= len(lines) and lines[idx + repeat_cnt * window_size : idx + (repeat_cnt + 1) * window_size] == pattern:
+                repeat_cnt += 1
+            if repeat_cnt > max_repeat_count:
+                new_lines.extend(pattern * max_repeat_count)
+                new_lines.append(
+                    f"... [REPETITION PATTERN COLLAPSED: {repeat_cnt - max_repeat_count} cycles stripped] ..."
+                )
+                idx += repeat_cnt * window_size
+            else:
+                new_lines.append(lines[idx])
+                idx += 1
+        lines = new_lines
+
+    return "\n".join(lines)
+
+
 def _parse_gemini_response(data: dict) -> tuple[str, dict]:
     candidates = data.get("candidates")
     if not candidates:
@@ -410,6 +498,7 @@ def _parse_gemini_response(data: dict) -> tuple[str, dict]:
         raise errors.EngineParseError(
             f"REST response shape did not match expected candidates[0].content.parts[0].text: {shape_exc}"
         ) from shape_exc
+    text = sanitize_model_response(text)
     usage = data.get("usageMetadata", {})
     return text, usage
 
@@ -460,6 +549,7 @@ def _parse_openai_compat_response(data: dict) -> tuple[str, dict]:
                 tc_blocks.append(f"<|tool_call_start|>{json.dumps(tc)}<|tool_call_end|>")
         if tc_blocks:
             text = (text + "\n" + "\n".join(tc_blocks)).strip()
+    text = sanitize_model_response(text)
     usage = data.get("usage", {})
     return text, usage
 

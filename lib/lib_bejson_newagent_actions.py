@@ -2,12 +2,20 @@
 Library:        lib_bejson_newagent_actions.py
 Family:         NewAgent
 Description:    Model action execution tools, XML tag parser, action queue dispatcher, and TaskManager.
-Version:        2.9.0
-Date:           2026-10-16
+Version:        2.10.0
+Date:           2026-11-20
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
 RELATIONAL_ID:  b5fde8ef-fe2b-429a-9c17-ab7935b55656
 
 CHANGELOG:
+- 2.10.0 (2026-11-20): Log-driven fixes from session_2026-11-19_01-26-21 / raw_api_debug_000003..7.
+  (1) exec payloads wrapped as cmd="..." / command='...' (recursive/flint-v1.0 emitted
+  <exec>cmd="mkdir -p ~/test && ls -ld ~/test"</exec>) were executed verbatim, which bash
+  parses as a bare VARIABLE ASSIGNMENT: nothing ran, exit_code 0, empty output, and the model
+  then reported success for a directory that never existed. _unwrap_exec_assignment() now strips
+  the wrapper in parse_actions() and _map_tool_call_to_action() before any denylist check or
+  execution. (2) Added Fallback 1b: <dots_function_call><tag><parameter name="k">v</parameter>
+  </invoke></dots_function_call> (dots-3-note-preview) was dropped entirely; now parsed.
 - 2.9.0 (2026-10-16): Added actions_signature() and is_announcement_only() for the agent loop's
   auto-continue guard (pkg128). No change to parse_actions()/run_action_queue() behaviour.
 - 2.8.0 (2026-10-16): Added fallback parser in parse_actions() for OpenRouter models
@@ -1762,6 +1770,7 @@ def _map_tool_call_to_action(
             kw_args.get("command"), kw_args.get("cmd"),
             pos_args[0] if pos_args else None, raw_arg,
         )
+        content = _unwrap_exec_assignment(content)
     elif tag in ("read_file", "list_dir", "make_dir", "delete_file", "diff_file", "bejson_fields"):
         content = _first_str(
             kw_args.get("path"), kw_args.get("file"), kw_args.get("dir"),
@@ -2117,6 +2126,35 @@ def is_announcement_only(parsed_actions: list[dict]) -> bool:
     return True
 
 
+
+_EXEC_ASSIGNMENT_WRAPPER = re.compile(
+    r"""^\s*(?:cmd|command)\s*=\s*(?P<q>["'])(?P<body>.*)(?P=q)\s*$""",
+    re.DOTALL,
+)
+
+_DOTS_CALL_BLOCK_PATTERN = re.compile(
+    r"<dots_function_call>(.*?)</dots_function_call>", re.DOTALL | re.IGNORECASE,
+)
+_DOTS_TAG_PATTERN = re.compile(r"<\s*([a-z_]+)\s*>", re.IGNORECASE)
+_DOTS_PARAM_PATTERN = re.compile(
+    r"<parameter\s+name=\"([a-zA-Z_]+)\"\s*>(.*?)</parameter>", re.DOTALL | re.IGNORECASE,
+)
+
+
+def _unwrap_exec_assignment(content: str) -> str:
+    """Strip a model-added ``cmd="..."`` / ``command='...'`` wrapper from an
+    exec payload. Left as-is, bash treats it as a variable assignment that
+    runs nothing yet exits 0 (see 2.10.0 changelog). Only a whole-payload
+    match is unwrapped, so a real command that merely contains ``cmd=`` is
+    untouched. Inner backslash-escaped quotes of the wrapper's own quote
+    type are restored."""
+    m = _EXEC_ASSIGNMENT_WRAPPER.match(content or "")
+    if not m:
+        return content
+    q = m.group("q")
+    return m.group("body").replace("\\" + q, q).strip()
+
+
 def parse_actions(text: str) -> list[dict]:
     if not text or not isinstance(text, str):
         return []
@@ -2138,6 +2176,8 @@ def parse_actions(text: str) -> list[dict]:
         # here so every action type (exec, write_file, etc.) gets the
         # content the model meant, not what it accidentally over-escaped.
         content = html.unescape(content)
+        if tag in ("exec", "exec_bg"):
+            content = _unwrap_exec_assignment(content)
 
         attrs = {}
         for attr_match in re.finditer(r'([a-zA-Z_]+)="([^"]*)"', attrs_raw):
@@ -2154,6 +2194,22 @@ def parse_actions(text: str) -> list[dict]:
         inner_block = tc_match.group(1) if tc_match.group(1) is not None else tc_match.group(2)
         for act in _parse_tool_call_block(inner_block):
             events.append((tc_start, act))
+
+    # Fallback 1b: <dots_function_call><tag><parameter name="k">v</parameter>
+    # </invoke></dots_function_call> (dots-3-note-preview). The inner tag is
+    # usually never closed, so ACTION_PATTERN cannot match it.
+    for dc_match in _DOTS_CALL_BLOCK_PATTERN.finditer(text):
+        dc_start, dc_end = dc_match.span()
+        if any(xs >= dc_start and xe <= dc_end for xs, xe in xml_spans):
+            continue
+        dc_body = dc_match.group(1)
+        tag_m = _DOTS_TAG_PATTERN.search(dc_body)
+        if not tag_m:
+            continue
+        dc_kwargs = {k: html.unescape(v).strip() for k, v in _DOTS_PARAM_PATTERN.findall(dc_body)}
+        dc_act = _map_tool_call_to_action(tag_m.group(1), [], dc_kwargs)
+        if dc_act:
+            events.append((dc_start, dc_act))
 
     if events:
         events.sort(key=lambda item: item[0])

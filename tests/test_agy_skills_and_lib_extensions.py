@@ -338,14 +338,14 @@ def test_config_manager_57col_positional_tui(tmp_path):
 
     mgr = config_tui.NewAgentConfigManagerState(tmp_path)
 
-    # 1. Verify 100% coverage of all 67 configuration options across 7 categories
+    # 1. Verify 100% coverage of all 69 configuration options across 7 categories
     total_opts, mod_opts = mgr.count_total_options_and_modifications()
     expected_total = (
         len(config_lib.DEFAULT_CONFIG)
         + len(context_bubble._DEFAULT_CONSTANTS)
         + len(config_tui.CLI_AGENT_DEFAULT_SCHEMA)
     )
-    assert total_opts == expected_total == 67
+    assert total_opts == expected_total == 69
     assert mod_opts == 0
     assert len(mgr.categories_list) == 7
 

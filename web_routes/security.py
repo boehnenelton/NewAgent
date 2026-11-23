@@ -45,7 +45,10 @@ def register_security(flask_application, terminal_instance) -> None:
                 return jsonify({"error": "Bad Host header."}), 400
 
         supplied_auth_token = (
-            request.headers.get("X-Auth-Token") or request.args.get("token") or ""
+            request.headers.get("X-Auth-Token")
+            or request.args.get("token")
+            or request.cookies.get("web_auth_token")
+            or ""
         )
         if not secrets.compare_digest(
             supplied_auth_token.encode("utf-8"),
@@ -79,10 +82,16 @@ def register_security(flask_application, terminal_instance) -> None:
             if request.path == "/":
                 return (
                     "<!doctype html><meta charset=utf-8><title>NewAgent</title>"
-                    "<body style='font-family:monospace;padding:2em'>"
-                    "<h3>NewAgent web terminal</h3><p>Missing or incorrect auth token."
-                    " Open the full URL printed in the console:<br>"
-                    "<code>http://HOST:PORT/?token=&lt;token&gt;</code></p></body>"
+                    "<body style='font-family:monospace;background:#000;color:#fff;padding:2em;display:flex;justify-content:center;align-items:center;min-height:80vh'>"
+                    "<div style='background:#111;border:1px solid #333;padding:2em;max-width:500px;width:100%;border-radius:4px'>"
+                    "<h3 style='color:#de2626;margin-top:0'>NewAgent web terminal</h3>"
+                    "<p style='color:#ccc'>Missing or incorrect auth token. Open the full URL printed in the console:<br>"
+                    "<code style='color:#de2626'>http://HOST:PORT/?token=&lt;token&gt;</code></p>"
+                    "<form method='GET' action='/' style='margin-top:1.5em;display:flex;flex-direction:column;gap:10px'>"
+                    "<input type='text' name='token' placeholder='Paste web_auth_token here...' autofocus required style='background:#222;border:1px solid #555;color:#fff;padding:10px;font-family:monospace;border-radius:2px'>"
+                    "<button type='submit' style='background:#de2626;color:#fff;border:none;padding:10px;font-weight:bold;cursor:pointer;font-family:monospace;border-radius:2px'>Authenticate Session</button>"
+                    "</form>"
+                    "</div></body>"
                 ), 401
             return (
                 jsonify({"error": "Unauthorized -- missing or incorrect auth token."}),
@@ -104,4 +113,21 @@ def register_security(flask_application, terminal_instance) -> None:
         http_response.headers["Strict-Transport-Security"] = (
             "max-age=31536000; includeSubDomains"
         )
+        supplied_token_for_cookie = (
+            request.headers.get("X-Auth-Token")
+            or request.args.get("token")
+            or request.cookies.get("web_auth_token")
+            or ""
+        )
+        if supplied_token_for_cookie and secrets.compare_digest(
+            supplied_token_for_cookie.encode("utf-8"),
+            terminal_instance.web_token.encode("utf-8"),
+        ):
+            http_response.set_cookie(
+                "web_auth_token",
+                terminal_instance.web_token,
+                httponly=True,
+                samesite="Lax",
+                path="/",
+            )
         return http_response

@@ -33,19 +33,25 @@
     [
       "pct_persistent_policy",
       null,
-      "0.2",
+      "0.20",
       "Share of budget for core directives"
     ],
     [
       "pct_active_tasks",
       null,
-      "0.2",
-      "Share of budget reserved for active-task context (not yet wired to a source \u2014 see docs)"
+      "0.20",
+      "Share of budget for active-task context, sourced from checklist_*.bejson files in the current directory (checklist_create/check/add/view tools)"
+    ],
+    [
+      "pct_env_file",
+      null,
+      "0.05",
+      "Share of budget for the live env_file.json drip (see build_env_file_section)"
     ],
     [
       "pct_keyword_triggers",
-      null,
       "0.35",
+      "0.30",
       "Share of budget for keyword-triggered files"
     ],
     [
@@ -56,8 +62,8 @@
     ],
     [
       "pct_cwd_context",
-      null,
-      "0.1",
+      "0.05",
+      "0.10",
       "Share of budget for cwd/context.bejson \u2014 auto-injected, no opt-in"
     ],
     [
@@ -74,13 +80,13 @@
     ],
     [
       "knowledge_drip_interval",
-      null,
+      "8",
       "5",
       "Turns between knowledge-pool injections"
     ],
     [
       "observer_refinement_interval",
-      null,
+      "10",
       "7",
       "Turns between Observer compression checks"
     ],
@@ -89,12 +95,6 @@
       null,
       "false",
       "Part 4 switch \u2014 Observer compression on/off"
-    ],
-    [
-      "pct_env_file",
-      null,
-      "0.05",
-      "Share of budget for the live env_file.json drip (see build_env_file_section)"
     ]
   ]
 }

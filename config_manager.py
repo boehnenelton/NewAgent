@@ -3,12 +3,12 @@
 Name:           config_manager.py
 Family:         NewAgent
 Description:    Dedicated 57-Column BEJSON Positional Telemetry TUI & CLI tool
-                for managing all 67 NewAgent configuration options across 7
+                for managing all 69 NewAgent configuration options across 7
                 hierarchical domain categories and 3 BEJSON 104a stores
                 (config/config.json, Context/constant_config.bejson, and
                 config/cliagent_config.json).
-Version:        1.0.0
-Date:           2026-10-24
+Version:        1.0.1
+Date:           2026-11-14
 Author:         Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
 RELATIONAL_ID:  c4a81e72-3d19-48f0-9b63-71d20e5c8a41
 """
@@ -30,7 +30,7 @@ sys.path.insert(0, str(SCRIPT_PATH / "lib"))
 
 import lib_bejson_newagent_config_tui as config_tui
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 RELATIONAL_ID = "c4a81e72-3d19-48f0-9b63-71d20e5c8a41"
 AUTHOR_CREDIT = (
     "Elton Boehnen · boehnenelton2024@gmail.com · "
@@ -45,7 +45,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
         prog="config_manager.py",
         description=(
             "NewAgent 57-Column BEJSON Positional Telemetry Configuration Manager "
-            "(7 Categories, 67 Options, 3 BEJSON 104a Stores)."
+            "(7 Categories, 69 Options, 3 BEJSON 104a Stores)."
         ),
     )
     parser.add_argument(

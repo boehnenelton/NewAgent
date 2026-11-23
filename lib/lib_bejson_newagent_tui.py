@@ -2,8 +2,8 @@
 Library:        lib_bejson_newagent_tui.py
 Family:         NewAgent
 Description:    TUI rendering, color palette, and session statistics.
-Version:        1.2.1
-Date:           2026-07-23
+Version:        1.3.0
+Date:           2026-11-14
 Author:         Elton Boehnen — boehnenelton2024@gmail.com
 RELATIONAL_ID:  7be14cf5-d96f-4bf1-966e-57d453c6a6f8
 """
@@ -12,7 +12,7 @@ import os
 import re
 from dataclasses import dataclass
 
-VERSION = "1.2.1"
+VERSION = "1.3.0"
 
 class C:
     RESET    = "\033[0m"
@@ -88,29 +88,77 @@ def wrap_and_cap(text: str, width: int, max_lines: int = 8) -> list[str]:
     return lines
 
 
-def clean_display_tags(text: str) -> str:
+def clean_display_tags(text: str, show_commands: bool = True) -> str:
     """
-    Extract human-readable content from model output for the compact history
-    view: keep <speak>...</speak> narration (the model's only user-facing
-    channel), strip other action tags (<exec>, <edit_file>, etc.) along with
-    their payloads since those are internal instructions, not conversation.
+    Extract human-readable content from turn messages for the history view.
+    When show_commands is False:
+      Extract <speak>...</speak> narration and strip other action tags (<exec>, <edit_file>, etc.)
+      along with their payloads.
+    When show_commands is True (default):
+      Preserve action tags (<exec>cmd</exec>, etc.) and format outgoing action results
+      so that model response commands and outgoing results remain visible to the user.
+    """
+    if not show_commands:
+        speak_blocks = re.findall(r"<speak>(.*?)</speak>", text, flags=re.DOTALL)
+        if speak_blocks:
+            return "\n".join(s.strip() for s in speak_blocks if s.strip())
 
-    Previously this stripped <tag>...</tag> as one unit for every tag,
-    which deleted the *enclosed text too* -- including <speak> content. Since
-    REST-mode responses are typically entirely composed of action tags, that
-    meant the history panel showed a role badge with the model's entire
-    response silently deleted: no error, just an empty line where the
-    reply should be.
-    """
-    speak_blocks = re.findall(r"<speak>(.*?)</speak>", text, flags=re.DOTALL)
+        stripped = re.sub(r"<[^>]+>.*?</[^>]+>|<[^>]+/?>", "", text, flags=re.DOTALL).strip()
+        if not stripped and text.strip():
+            return "[actions executed, no narration]"
+        return stripped
+
+    # 1. Action results payload (outgoing user-system action results)
+    result_blocks = re.findall(r"<(\w+)_result(?:\s+[^>]*?)?>(.*?)</\1_result>", text, flags=re.DOTALL)
+    if result_blocks:
+        formatted_res = []
+        for tag, content in result_blocks:
+            content_clean = content.strip()
+            first_line = content_clean.splitlines()[0] if content_clean else "(empty)"
+            formatted_res.append(f"[{tag}_result] {first_line}")
+        return "\n".join(formatted_res)
+
+    # 2. Extract speak narration blocks
+    speak_blocks = [s.strip() for s in re.findall(r"<speak>(.*?)</speak>", text, flags=re.DOTALL) if s.strip()]
+
+    # 3. Extract action tags
+    action_matches = re.findall(
+        r"<(exec|read_file|write_file|edit_file|list_dir|tree_view|make_dir|delete_file|"
+        r"copy_file|diff_file|restore_file|http_get|find_files|search_text|fuzzy_find|env_get|"
+        r"checkpoint|checklist_create|checklist_check|checklist_add|checklist_view|"
+        r"html_report|html_report_append|project_log|request_continue|"
+        r"bejson_fields|bejson_add_field|bejson_delete_field|bejson_create_record|"
+        r"bejson_delete_record|bejson_set_value|bejson_columns|bejson_create|context_set|"
+        r"exec_bg|task_status|task_kill|task_list|job_task_done|agy_skill)(?:\s+([^>]*?))?(?<!/)>(.*?)</\1>|"
+        r"<(copy_file|task_list|job_task_done|agy_skill)(?:\s+([^>]*?))?\s*/>",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
+    )
+    formatted_actions = []
+    for m in action_matches:
+        tag = m[0] or m[3]
+        attrs = (m[1] or m[4] or "").strip()
+        body = (m[2] or "").strip()
+        if tag.lower() == "exec":
+            formatted_actions.append(f"<exec>{body}</exec>")
+        elif body:
+            attr_str = f" {attrs}" if attrs else ""
+            body_snippet = body.splitlines()[0][:60] if body else ""
+            formatted_actions.append(f"<{tag}{attr_str}>{body_snippet}</{tag}>")
+        else:
+            attr_str = f" {attrs}" if attrs else ""
+            formatted_actions.append(f"<{tag}{attr_str}/>")
+
+    items = []
     if speak_blocks:
-        return "\n".join(s.strip() for s in speak_blocks if s.strip())
+        items.extend(speak_blocks)
+    if formatted_actions:
+        items.extend(formatted_actions)
+    if items:
+        return "\n".join(items)
 
     stripped = re.sub(r"<[^>]+>.*?</[^>]+>|<[^>]+/?>", "", text, flags=re.DOTALL).strip()
     if not stripped and text.strip():
-        # The whole response was action tags with no <speak> narration at
-        # all -- real, silent tool-only turn. Say so rather than showing an
-        # unexplained blank line that looks identical to a bug.
         return "[actions executed, no narration]"
     return stripped
 
@@ -136,6 +184,8 @@ def refresh_ui(
     input_mode: int = 0,
     agent_version: str = "",
     context_bloat: bool = False,
+    show_outgoing_prompts: bool = True,
+    show_response_commands: bool = True,
 ) -> None:
     width = get_term_width()
     bar = "═" * width
@@ -181,14 +231,19 @@ def refresh_ui(
         else:
             i += 1
 
-    if not pairs:
+    trailing_user = None
+    if show_outgoing_prompts and visible and visible[-1]["role"] == "user":
+        if not pairs or pairs[-1][0] is not visible[-1]:
+            trailing_user = visible[-1]
+
+    if not pairs and not trailing_user:
         print(f"{C.WHITE_DIM}  (no history){C.RESET}")
     else:
         content_width = max(width - 2, 20)
         for u, m in pairs[-history_rows:]:
             ts       = u.get("_ts", "")
-            u_text   = clean_display_tags(u.get("content", ""))
-            m_text   = clean_display_tags(m.get("content", ""))
+            u_text   = clean_display_tags(u.get("content", ""), show_commands=show_response_commands)
+            m_text   = clean_display_tags(m.get("content", ""), show_commands=show_response_commands)
             m_ts     = m.get("_ts", "")
 
             u_lines = wrap_and_cap(u_text, content_width, max_lines=8)
@@ -201,6 +256,15 @@ def refresh_ui(
 
             print(f"{C.WHITE_DIM}{m_ts} {C.RESET}{C.RED_B}[GEMINI]{C.RESET}")
             for line in m_lines:
+                print(f"  {C.WHITE}{line}{C.RESET}")
+            print()
+
+        if trailing_user:
+            ts = trailing_user.get("_ts", "")
+            u_text = clean_display_tags(trailing_user.get("content", ""), show_commands=show_response_commands)
+            u_lines = wrap_and_cap(u_text, content_width, max_lines=8)
+            print(f"{C.WHITE_DIM}{ts} {C.RESET}{C.WHITE_B}[YOU]{C.RESET} {C.YELLOW}[OUTGOING]{C.RESET}")
+            for line in u_lines:
                 print(f"  {C.WHITE}{line}{C.RESET}")
             print()
 

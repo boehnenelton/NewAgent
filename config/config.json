@@ -132,7 +132,7 @@
     ],
     [
       "multi_line_mode",
-      "false",
+      "true",
       "Triple-Enter for multi-line typed input"
     ],
     [
@@ -207,7 +207,7 @@
     ],
     [
       "network_error_retry_backoff_seconds",
-      "3.0",
+      "5.0",
       "Delay before an auto-resend triggered by network_error_auto_retry"
     ],
     [
@@ -217,7 +217,7 @@
     ],
     [
       "subagents_enabled",
-      "false",
+      "true",
       "Master switch for the sub-agent system (lib_bejson_newagent_subagent_*.py). When false (the default -- new/experimental feature), dispatch_subagent()/run_subagent_turn()/resume_subagent() all refuse immediately with status='disabled' and create/mutate nothing on disk; existing subagent session/signal/profile files are left untouched either way. Flip to true to allow the main agent (or any tool built on top of it) to actually dispatch sub-agent sessions."
     ],
     [
@@ -227,7 +227,7 @@
     ],
     [
       "env_paths_file_path",
-      "/storage/emulated/0/.env/user/paths.json",
+      "/storage/emulated/0/.env/user/definitions.json",
       "PRIMARY env source (2 of 2): non-sensitive vars (paths, IDs, model names). See env_templates/ for the blank schema."
     ],
     [
@@ -237,7 +237,7 @@
     ],
     [
       "agy_skills_enabled",
-      "false",
+      "true",
       "Master switch (true/false) for the Antigravity (agy) skills compatibility layer (lib_bejson_newagent_agy_skills.py). When false (the default), agy skills are completely disabled with zero context or action overhead. Flip to true to discover SKILL.md bundles and enable <agy_skill> / /skills as an alternative to the tool system."
     ],
     [
@@ -264,6 +264,16 @@
       "gemini_md_max_chars",
       "36000",
       "Max characters allocated for combined global + tree-walked GEMINI.md/AGENTS.md persistent policy when gemini_md_policy_enabled is true (0 = use standard pct_persistent_policy budget)."
+    ],
+    [
+      "show_outgoing_prompts",
+      "true",
+      "When true, outgoing user prompts and tool responses remain visible in the TUI history panel even before the model response arrives"
+    ],
+    [
+      "show_response_commands",
+      "true",
+      "When true, model response action tags (such as <exec> shell commands) remain visible in the TUI history panel instead of being stripped"
     ]
   ]
 }

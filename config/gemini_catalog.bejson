@@ -222,17 +222,6 @@
     ],
     [
       17,
-      "poolside/laguna-xs-2.1:free",
-      "Poolside: Laguna XS 2.1 (free)",
-      "flash",
-      "GA",
-      "Laguna XS 2.1 is the latest coding agent model in the 33B-A3B category from [Poolside](https://poolside.ai/) and a st...",
-      "legacy",
-      "openrouter",
-      ""
-    ],
-    [
-      18,
       "cohere/north-mini-code:free",
       "Cohere: North Mini Code (free)",
       "flash",
@@ -243,7 +232,7 @@
       ""
     ],
     [
-      19,
+      18,
       "nvidia/nemotron-3.5-content-safety:free",
       "NVIDIA: Nemotron 3.5 Content Safety (free)",
       "flash",
@@ -254,7 +243,7 @@
       ""
     ],
     [
-      20,
+      19,
       "nvidia/nemotron-3-ultra-550b-a55b:free",
       "NVIDIA: Nemotron 3 Ultra (free)",
       "flash",
@@ -265,7 +254,7 @@
       ""
     ],
     [
-      21,
+      20,
       "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
       "NVIDIA: Nemotron 3 Nano Omni (free)",
       "flash",
@@ -276,7 +265,7 @@
       ""
     ],
     [
-      22,
+      21,
       "google/gemma-4-26b-a4b-it:free",
       "Google: Gemma 4 26B A4B  (free)",
       "flash",
@@ -287,7 +276,7 @@
       ""
     ],
     [
-      23,
+      22,
       "google/gemma-4-31b-it:free",
       "Google: Gemma 4 31B (free)",
       "flash",
@@ -298,7 +287,7 @@
       ""
     ],
     [
-      24,
+      23,
       "nvidia/nemotron-3-super-120b-a12b:free",
       "NVIDIA: Nemotron 3 Super (free)",
       "flash",
@@ -309,7 +298,7 @@
       ""
     ],
     [
-      25,
+      24,
       "openrouter/free",
       "Free Models Router (OpenRouter)",
       "flash",
@@ -317,6 +306,116 @@
       "The simplest way to get free inference. openrouter/free is a router that selects free models at random from the model...",
       "legacy",
       "openrouter",
+      ""
+    ],
+    [
+      25,
+      "gemini-3.7-flash",
+      "Gemini 3.7 Flash",
+      "flash",
+      "GA",
+      "High-efficiency agentic model for multi-step reasoning, coding, and tool calling.",
+      "v3",
+      "gemini",
+      ""
+    ],
+    [
+      26,
+      "gemini-3.8-flash",
+      "Gemini 3.8 Flash",
+      "flash",
+      "GA",
+      "Flagship agentic flash model; customizable thinkingLevel parameter.",
+      "v3",
+      "gemini",
+      ""
+    ],
+    [
+      27,
+      "gemini-4-argon",
+      "Gemini 4 Argon",
+      "pro",
+      "GA",
+      "Gemini 4 frontier reasoning, coding, and autonomous agent model.",
+      "v3",
+      "gemini",
+      ""
+    ],
+    [
+      28,
+      "gemini-4-neon",
+      "Gemini 4 Neon",
+      "flash",
+      "GA",
+      "Gemini 4 high-speed next-gen model with deep reasoning.",
+      "v3",
+      "gemini",
+      ""
+    ],
+    [
+      29,
+      "gemini-4-hydrogen",
+      "Gemini 4 Hydrogen",
+      "flash-lite",
+      "GA",
+      "Gemini 4 ultra-fast high-throughput lightweight tier.",
+      "v3",
+      "gemini",
+      ""
+    ],
+    [
+      30,
+      "gemini-4-carbon",
+      "Gemini 4 Carbon",
+      "pro",
+      "preview",
+      "Gemini 4 extended-context multimodal deep reasoning preview model.",
+      "v3",
+      "gemini",
+      ""
+    ],
+    [
+      31,
+      "gemini-flash-latest",
+      "Gemini Flash Latest",
+      "flash",
+      "GA",
+      "Dynamic pointer to Google's latest production Flash tier model.",
+      "v3",
+      "gemini",
+      ""
+    ],
+    [
+      32,
+      "gemini-flash-lite-latest",
+      "Gemini Flash-Lite Latest",
+      "flash-lite",
+      "GA",
+      "Dynamic pointer to Google's latest production Flash-Lite tier model.",
+      "v3",
+      "gemini",
+      ""
+    ],
+    [
+      33,
+      "gemini-pro-latest",
+      "Gemini Pro Latest",
+      "pro",
+      "GA",
+      "Dynamic pointer to Google's latest production Pro tier model.",
+      "v3",
+      "gemini",
+      ""
+    ],
+    [
+      34,
+      "gemma-4-31b-it",
+      "Gemma 4 31B IT",
+      "flash",
+      "GA",
+      "Google open-weights instruction-tuned 31B parameter model.",
+      "v3",
+      "gemini",
       ""
     ]
   ]

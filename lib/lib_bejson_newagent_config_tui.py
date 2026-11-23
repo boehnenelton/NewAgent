@@ -3,13 +3,13 @@ Library:        lib_bejson_newagent_config_tui.py
 Family:         NewAgent
 Description:    57-Column BEJSON Positional Telemetry TUI Engine & Hierarchical
                 Configuration Manager for NewAgent. Manages all configuration
-                options across config/config.json (49 settings),
+                options across config/config.json (51 settings),
                 Context/constant_config.bejson (12 settings), and
                 config/cliagent_config.json (6 settings) organized into 7
                 domain categories with zero-typing presets, one-key toggles,
                 BEJSON 104a validation, path probing, and snapshot backups.
-Version:        1.0.0
-Date:           2026-10-24
+Version:        1.0.1
+Date:           2026-11-14
 Author:         Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
 Release_Version: 300
 RELATIONAL_ID:  9f5e2c14-8a3b-4d72-9c11-6e40b18f3d2a
@@ -41,7 +41,7 @@ from lib_bejson_Core_bejson_validator import validate_bejson
 import lib_bejson_newagent_config as config_lib
 import lib_bejson_newagent_context_bubble as context_bubble
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 RELATIONAL_ID = "9f5e2c14-8a3b-4d72-9c11-6e40b18f3d2a"
 AUTHOR_CREDIT = (
     "Elton Boehnen · boehnenelton2024@gmail.com · "
@@ -235,6 +235,8 @@ HIERARCHICAL_CATEGORY_DESCRIPTORS: list[ConfigCategoryDescriptor] = [
             "live_feed_output",
             "speak_output_enabled",
             "history_panel_rows",
+            "show_outgoing_prompts",
+            "show_response_commands",
             "log_level",
             "debug_mode",
             "health_check_on_startup",

@@ -6,13 +6,16 @@ Description:  Lean orchestrator and async main event loop dispatcher.
               delegates bootstrap, tool-map construction, autonomy/loop-guard
               state, and exception classification through gated modular service
               abstraction layers (lib_bejson_newagent_service_gates.py).
-Version:      2.24.0
-Date:         2026-11-12
+Version:      2.25.0
+Date:         2026-11-14
 Author:       Elton Boehnen · boehnenelton2024@gmail.com · boehnenelton2024.pages.dev · github.com/boehnenelton
 License:      PolyForm-Noncommercial-1.0.0
 RELATIONAL_ID: 7b4e1a82-9c3d-4f6b-8e2a-1d5c9f3a7b40
 
 CHANGELOG:
+- 2.25.0 (2026-11-14): Integrated `show_outgoing_prompts` and `show_response_commands`
+  config flags into TUI refresh cycle via unified `_refresh_tui` helper, ensuring in-flight
+  user prompts and executed response commands remain visible during agent execution.
 - 2.24.0 (2026-11-12): Audited taxonomies (<hierarchy>_<group>_<purpose>), eliminated
   single-letter and cryptic variable identifiers, and separated runtime lifecycle,
   native tool dispatch map construction, autonomy/auto-continue loop guard, and
@@ -65,7 +68,7 @@ from lib_bejson_newagent_service_gates import (
     ServiceGateAgentRuntimeController,
 )
 
-VERSION = "2.24.0"
+VERSION = "2.25.0"
 RELATIONAL_ID = "7b4e1a82-9c3d-4f6b-8e2a-1d5c9f3a7b40"
 
 # Directories configuration
@@ -313,16 +316,26 @@ async def main() -> None:
         _rebind_active_engine()
 
         # 6. Main Interactive TUI Event Loop
-        tui.refresh_ui(
-            history=conversation_history_list,
-            exec_results=turn_exec_results_list,
-            stats=session_stats_tracker,
-            cwd=runtime_context_map["_cwd"],
-            input_mode=runtime_config_map.get("input_mode", 0),
-            dryrun=runtime_config_map.get("dryrun_mode", False),
-            context_bloat=runtime_context_map.get("_context_bloat", False),
-            agent_version=VERSION,
-        )
+        def _refresh_tui(status_message: str = "") -> None:
+            tui.refresh_ui(
+                history=conversation_history_list,
+                exec_results=turn_exec_results_list,
+                stats=session_stats_tracker,
+                cwd=runtime_context_map["_cwd"],
+                input_mode=runtime_config_map.get("input_mode", 0),
+                dryrun=runtime_config_map.get("dryrun_mode", False),
+                context_bloat=runtime_context_map.get("_context_bloat", False),
+                status=status_message,
+                agent_version=VERSION,
+                show_outgoing_prompts=bool(
+                    runtime_config_map.get("show_outgoing_prompts", True)
+                ),
+                show_response_commands=bool(
+                    runtime_config_map.get("show_response_commands", True)
+                ),
+            )
+
+        _refresh_tui()
 
         autonomy_gate_state = AgentAutonomyGateState()
 
@@ -340,16 +353,8 @@ async def main() -> None:
             ):
                 autonomy_gate_state.autonomy_mode_active_flag = False
                 autonomy_gate_state.auto_continuing_next_turn_flag = False
-                tui.refresh_ui(
-                    history=conversation_history_list,
-                    exec_results=turn_exec_results_list,
-                    stats=session_stats_tracker,
-                    cwd=runtime_context_map["_cwd"],
-                    input_mode=runtime_config_map.get("input_mode", 0),
-                    dryrun=runtime_config_map.get("dryrun_mode", False),
-                    context_bloat=runtime_context_map.get("_context_bloat", False),
-                    status="Autonomy turn limit reached. Press Enter to proceed.",
-                    agent_version=VERSION,
+                _refresh_tui(
+                    status_message="Autonomy turn limit reached. Press Enter to proceed."
                 )
 
             # Prompt for user input when manual gate is active
@@ -377,19 +382,7 @@ async def main() -> None:
                     if command_was_handled:
                         if runtime_context_map["_exit_requested"]:
                             break
-                        tui.refresh_ui(
-                            history=conversation_history_list,
-                            exec_results=turn_exec_results_list,
-                            stats=session_stats_tracker,
-                            cwd=runtime_context_map["_cwd"],
-                            input_mode=runtime_config_map.get("input_mode", 0),
-                            dryrun=runtime_config_map.get("dryrun_mode", False),
-                            context_bloat=runtime_context_map.get(
-                                "_context_bloat", False
-                            ),
-                            status=slash_command_output or "",
-                            agent_version=VERSION,
-                        )
+                        _refresh_tui(status_message=slash_command_output or "")
                         continue
 
                 turn_timestamp_hms = datetime.now().strftime("%H:%M:%S")
@@ -411,17 +404,7 @@ async def main() -> None:
             # Clear execution results for fresh turn display
             turn_exec_results_list.clear()
 
-            tui.refresh_ui(
-                history=conversation_history_list,
-                exec_results=turn_exec_results_list,
-                stats=session_stats_tracker,
-                cwd=runtime_context_map["_cwd"],
-                input_mode=runtime_config_map.get("input_mode", 0),
-                dryrun=runtime_config_map.get("dryrun_mode", False),
-                context_bloat=runtime_context_map.get("_context_bloat", False),
-                status="Awaiting response...",
-                agent_version=VERSION,
-            )
+            _refresh_tui(status_message="Awaiting response...")
 
             # Context Bubble assembly
             active_user_prompt_text = (
@@ -578,16 +561,8 @@ async def main() -> None:
                     backup.init_backup(BACKUPS_DIR)
                 except Exception:
                     pass
-                tui.refresh_ui(
-                    history=conversation_history_list,
-                    exec_results=turn_exec_results_list,
-                    stats=session_stats_tracker,
-                    cwd=runtime_context_map["_cwd"],
-                    input_mode=runtime_config_map.get("input_mode", 0),
-                    dryrun=runtime_config_map.get("dryrun_mode", False),
-                    context_bloat=runtime_context_map.get("_context_bloat", False),
-                    status=f"[FATAL] {fatal_turn_exception} — shutting down.",
-                    agent_version=VERSION,
+                _refresh_tui(
+                    status_message=f"[FATAL] {fatal_turn_exception} — shutting down."
                 )
                 runtime_context_map["_exit_requested"] = True
                 break
@@ -619,18 +594,8 @@ async def main() -> None:
                         backup.init_backup(BACKUPS_DIR)
                     except Exception:
                         pass
-                    tui.refresh_ui(
-                        history=conversation_history_list,
-                        exec_results=turn_exec_results_list,
-                        stats=session_stats_tracker,
-                        cwd=runtime_context_map["_cwd"],
-                        input_mode=runtime_config_map.get("input_mode", 0),
-                        dryrun=runtime_config_map.get("dryrun_mode", False),
-                        context_bloat=runtime_context_map.get(
-                            "_context_bloat", False
-                        ),
-                        status=f"[FATAL] {runtime_context_map['_consecutive_turn_failures']} consecutive failures ({recoverable_turn_exception}) — shutting down.",
-                        agent_version=VERSION,
+                    _refresh_tui(
+                        status_message=f"[FATAL] {runtime_context_map['_consecutive_turn_failures']} consecutive failures ({recoverable_turn_exception}) — shutting down."
                     )
                     runtime_context_map["_exit_requested"] = True
                     break
@@ -656,21 +621,11 @@ async def main() -> None:
                     and runtime_config_map.get("network_error_auto_retry", True)
                     and not mid_turn_mutated
                 ):
-                    tui.refresh_ui(
-                        history=conversation_history_list,
-                        exec_results=turn_exec_results_list,
-                        stats=session_stats_tracker,
-                        cwd=runtime_context_map["_cwd"],
-                        input_mode=runtime_config_map.get("input_mode", 0),
-                        dryrun=runtime_config_map.get("dryrun_mode", False),
-                        context_bloat=runtime_context_map.get(
-                            "_context_bloat", False
-                        ),
-                        status=(
+                    _refresh_tui(
+                        status_message=(
                             f"MESSAGE FAILED TO SEND ({runtime_context_map['_consecutive_turn_failures']}/{runtime_context_map['_max_consecutive_turn_failures']}): "
                             f"{failure_reason_summary} Reason: {recoverable_turn_exception} — auto-retrying same message..."
-                        ),
-                        agent_version=VERSION,
+                        )
                     )
                     await asyncio.sleep(
                         runtime_config_map.get(
@@ -680,23 +635,16 @@ async def main() -> None:
                     autonomy_gate_state.auto_continuing_next_turn_flag = True
                     continue
 
-                tui.refresh_ui(
-                    history=conversation_history_list,
-                    exec_results=turn_exec_results_list,
-                    stats=session_stats_tracker,
-                    cwd=runtime_context_map["_cwd"],
-                    input_mode=runtime_config_map.get("input_mode", 0),
-                    dryrun=runtime_config_map.get("dryrun_mode", False),
-                    context_bloat=runtime_context_map.get("_context_bloat", False),
-                    status=(
+                _refresh_tui(
+                    status_message=(
                         f"MESSAGE FAILED TO SEND ({runtime_context_map['_consecutive_turn_failures']}/{runtime_context_map['_max_consecutive_turn_failures']}): "
                         f"{failure_reason_summary} Reason: {recoverable_turn_exception} — please resend."
-                    ),
-                    agent_version=VERSION,
+                    )
                 )
                 continue
 
             # Append model response to history and transcript
+            model_response_text = rest.sanitize_model_response(model_response_text)
             turn_timestamp_hms = datetime.now().strftime("%H:%M:%S")
             conversation_history_list.append(
                 {
@@ -754,18 +702,8 @@ async def main() -> None:
                                 "system",
                                 f"[AUTO-CONTINUE STOPPED] {loop_guard_stop_reason}",
                             )
-                            tui.refresh_ui(
-                                history=conversation_history_list,
-                                exec_results=turn_exec_results_list,
-                                stats=session_stats_tracker,
-                                cwd=runtime_context_map["_cwd"],
-                                input_mode=runtime_config_map.get("input_mode", 0),
-                                dryrun=runtime_config_map.get("dryrun_mode", False),
-                                context_bloat=runtime_context_map.get(
-                                    "_context_bloat", False
-                                ),
-                                status=f"Auto-continue stopped: {loop_guard_stop_reason}. Awaiting input.",
-                                agent_version=VERSION,
+                            _refresh_tui(
+                                status_message=f"Auto-continue stopped: {loop_guard_stop_reason}. Awaiting input."
                             )
             else:
                 executed_turn_actions_list = (
@@ -816,16 +754,7 @@ async def main() -> None:
                 session.save_resume_session(RESUME_PATH, conversation_history_list)
 
             # Repaint TUI for completed turn
-            tui.refresh_ui(
-                history=conversation_history_list,
-                exec_results=turn_exec_results_list,
-                stats=session_stats_tracker,
-                cwd=runtime_context_map["_cwd"],
-                input_mode=runtime_config_map.get("input_mode", 0),
-                dryrun=runtime_config_map.get("dryrun_mode", False),
-                context_bloat=runtime_context_map.get("_context_bloat", False),
-                agent_version=VERSION,
-            )
+            _refresh_tui()
 
     except asyncio.CancelledError:
         print(

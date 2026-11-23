@@ -27,8 +27,10 @@ CHANGELOG:
 from __future__ import annotations
 
 import logging
+import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 # Insert lib/ directory into path to resolve lib_bejson_newagent_* correctly
@@ -85,6 +87,69 @@ from web_routes import (  # noqa: E402
 
 __version__ = VERSION
 webagent_logger = logging.getLogger(__name__)
+
+
+def copy_url_to_termux_clipboard(target_url: str) -> bool:
+    """Copy target URL to Termux clipboard via termux-clipboard-set if available."""
+    try:
+        clipboard_process = subprocess.run(
+            ["termux-clipboard-set"],
+            input=target_url,
+            text=True,
+            capture_output=True,
+            timeout=3,
+        )
+        return clipboard_process.returncode == 0
+    except Exception:
+        return False
+
+
+def dispatch_chrome_browser(target_url: str) -> bool:
+    """
+    Launch Google Chrome as mandatory primary browser via Android Activity Manager
+    per System Invariants, falling back to secondary URL openers.
+    """
+    copy_url_to_termux_clipboard(target_url)
+
+    # 1. Primary: Chrome via Activity Manager
+    try:
+        activity_manager_command = [
+            "am",
+            "start",
+            "-n",
+            "com.android.chrome/com.google.android.apps.chrome.Main",
+            "-d",
+            target_url,
+        ]
+        activity_process = subprocess.run(
+            activity_manager_command,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if activity_process.returncode == 0:
+            webagent_logger.info("[webagent] Dispatched Google Chrome via Android Activity Manager.")
+            return True
+    except Exception:
+        pass
+
+    # 2. Secondary fallback: Termux and Linux URL openers
+    for fallback_command_name in ("termux-open-url", "termux-open", "xdg-open"):
+        try:
+            fallback_process = subprocess.run(
+                [fallback_command_name, target_url],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if fallback_process.returncode == 0:
+                webagent_logger.info("[webagent] Dispatched browser via %s.", fallback_command_name)
+                return True
+        except Exception:
+            continue
+
+    webagent_logger.warning("[webagent] Could not auto-launch browser. Please open: %s", target_url)
+    return False
 
 
 class WebAgentTerminal:
@@ -207,8 +272,21 @@ class WebAgentTerminal:
         ):
             self.app.register_blueprint(route_module.create_blueprint(self))
 
-    def run(self, debug: bool = False) -> None:
-        self.app.run(host=self.host, port=self.port, debug=debug)
+    def run(self, debug_flag: bool = False, auto_open_browser_flag: bool = True) -> None:
+        if auto_open_browser_flag:
+            target_browser_url = f"http://{self.host}:{self.port}/?token={self.web_token}"
+
+            def _delayed_browser_launcher() -> None:
+                time.sleep(0.5)
+                dispatch_chrome_browser(target_browser_url)
+
+            launcher_thread = threading.Thread(
+                target=_delayed_browser_launcher,
+                daemon=True,
+            )
+            launcher_thread.start()
+
+        self.app.run(host=self.host, port=self.port, debug=debug_flag)
 
 
 if __name__ == "__main__":
@@ -222,9 +300,14 @@ if __name__ == "__main__":
         action="store_true",
         help="permit a non-loopback --host (exposes shell execution to the network)",
     )
+    cli_argument_parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="do not automatically launch Chrome browser on startup",
+    )
     parsed_cli_arguments = cli_argument_parser.parse_args()
     WebAgentTerminal(
         host=parsed_cli_arguments.host,
         port=parsed_cli_arguments.port,
         allow_remote=parsed_cli_arguments.allow_remote,
-    ).run()
+    ).run(auto_open_browser_flag=not parsed_cli_arguments.no_browser)

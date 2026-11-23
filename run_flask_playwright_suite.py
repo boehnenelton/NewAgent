@@ -119,6 +119,7 @@ async def execute_playwright_tests() -> int:
             "127.0.0.1",
             "--port",
             str(PORT_WEBAGENT_SERVER),
+            "--no-browser",
         ],
         cwd=str(SCRIPT_DIRECTORY_PATH),
         env=base_process_environment,

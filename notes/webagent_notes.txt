@@ -1,1 +1,7 @@
 Playwright automated verification: webagent.py 0.14.0 active with 67 options.
+
+The files list needs to be wrapped in a container that vertically scrolls on overflow. 
+
+Lower file management path shortcutsl buttons should be solid black background with white font 
+
+config sections should also have black buttons unless active then red bg white text. 
